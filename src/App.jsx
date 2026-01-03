@@ -19,7 +19,6 @@ export default function App() {
         <Route path="/debts" element={<DebtsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>

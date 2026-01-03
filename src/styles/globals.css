@@ -86,3 +86,40 @@ body {
   padding: 8px 10px;
   cursor: pointer;
 }
+
+.headerCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profileBar {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+}
+
+.profileLeft, .profileRight {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.select, .input {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
