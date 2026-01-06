@@ -207,3 +207,38 @@ body {
   border: 1px solid var(--border);
   background: transparent;
 }
+
+.progress {
+  width: 100%;
+  height: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--text);
+  opacity: 0.25;
+}
+
+.badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gridDash {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .gridDash { grid-template-columns: 1fr; }
+}
