@@ -242,3 +242,10 @@ body {
 @media (max-width: 900px) {
   .gridDash { grid-template-columns: 1fr; }
 }
+
+.btnDanger {
+  opacity: 0.85;
+}
+.btnDanger:hover {
+  opacity: 1;
+}
