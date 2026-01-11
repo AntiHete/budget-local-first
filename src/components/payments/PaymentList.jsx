@@ -10,6 +10,7 @@ function fmtUAH(x) {
 export default function PaymentList() {
   const { activeProfileId } = useProfile();
   const [statusFilter, setStatusFilter] = useState("planned"); // planned | done | all
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
   const catMap = useLiveQuery(async () => {
     if (!activeProfileId) return new Map();
@@ -68,26 +69,49 @@ export default function PaymentList() {
               <th></th>
             </tr>
           </thead>
+
           <tbody>
-            {filtered.map((p) => (
-              <tr key={p.id}>
-                <td>{p.dueDate}</td>
-                <td>{p.title}</td>
-                <td>{p.categoryId ? (catMap?.get(p.categoryId) ?? "—") : "—"}</td>
-                <td>{fmtUAH(p.amount)}</td>
-                <td><span className="badge">{p.status === "done" ? "Виконано" : "Заплановано"}</span></td>
-                <td style={{ textAlign: "right" }}>
-                  {p.status === "planned" ? (
-                    <button className="btn" type="button" onClick={() => markDone(p.id)}>Зроблено</button>
-                  ) : (
-                    <button className="btn" type="button" onClick={() => markPlanned(p.id)}>Повернути</button>
-                  )}
-                  <button className="btn btnDanger" type="button" onClick={() => deletePayment(p.id)} style={{ marginLeft: 8 }}>
-                    Видалити
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((p) => {
+              const isOverdue = p.status === "planned" && (p.dueDate || "") < today;
+
+              return (
+                <tr key={p.id}>
+                  <td>{p.dueDate}</td>
+                  <td>{p.title}</td>
+                  <td>{p.categoryId ? (catMap?.get(p.categoryId) ?? "—") : "—"}</td>
+                  <td>{fmtUAH(p.amount)}</td>
+
+                  <td>
+                    {isOverdue ? (
+                      <span className="badge badgeDanger">Прострочено</span>
+                    ) : (
+                      <span className="badge">{p.status === "done" ? "Виконано" : "Заплановано"}</span>
+                    )}
+                  </td>
+
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {p.status === "planned" ? (
+                      <button className="btn" type="button" onClick={() => markDone(p.id)}>
+                        Зроблено
+                      </button>
+                    ) : (
+                      <button className="btn" type="button" onClick={() => markPlanned(p.id)}>
+                        Повернути
+                      </button>
+                    )}
+
+                    <button
+                      className="btn btnDanger"
+                      type="button"
+                      onClick={() => deletePayment(p.id)}
+                      style={{ marginLeft: 8 }}
+                    >
+                      Видалити
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
 
             {filtered.length === 0 && (
               <tr>
@@ -101,7 +125,7 @@ export default function PaymentList() {
       </div>
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Нагадування реалізовані у вигляді списку з датами (без серверних нотифікацій).
+        Прострочені платежі визначаються локально (якщо дата &lt; сьогодні і статус “Заплановано”).
       </p>
     </div>
   );

@@ -249,3 +249,8 @@ body {
 .btnDanger:hover {
   opacity: 1;
 }
+
+.badgeDanger {
+  border-color: #ef4444;
+  color: #ef4444;
+}
