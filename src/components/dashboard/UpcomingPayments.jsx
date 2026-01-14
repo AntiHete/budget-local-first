@@ -1,19 +1,14 @@
 import React from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../../db/db";
 import { useProfile } from "../../context/ProfileContext";
+import { getUpcomingPayments } from "../../services/paymentService";
 
 export default function UpcomingPayments() {
   const { activeProfileId } = useProfile();
 
   const list = useLiveQuery(async () => {
     if (!activeProfileId) return [];
-    const planned = await db.payments
-      .where({ profileId: activeProfileId, status: "planned" })
-      .toArray();
-
-    planned.sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
-    return planned.slice(0, 5);
+    return getUpcomingPayments(activeProfileId, 5);
   }, [activeProfileId]);
 
   return (
