@@ -25,3 +25,15 @@ db.version(3).stores({
   // dueDate: 'YYYY-MM-DD'
   payments: "++id, profileId, dueDate, title, amount, categoryId, status, createdAt",
 });
+
+db.version(4).stores({
+  profiles: "++id, name, createdAt",
+  categories: "++id, profileId, type, name",
+  transactions: "++id, profileId, date, type, categoryId, amount, createdAt",
+  budgets: "++id, profileId, month, categoryId, limit",
+  payments: "++id, profileId, dueDate, title, amount, categoryId, status, createdAt",
+
+  // Debts
+  debts: "++id, profileId, direction, counterparty, principal, currency, startDate, dueDate, status, createdAt",
+  debtPayments: "++id, profileId, debtId, date, amount, createdAt",
+});
