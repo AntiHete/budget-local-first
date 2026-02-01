@@ -30,8 +30,8 @@ export async function createDebt({
 
 /**
  * Add a payment to a debt (optionally creates a transaction).
- * - If direction = "i_owe"  => transaction type = "expense"
- * - If direction = "owed_to_me" => transaction type = "income"
+ * - direction = "i_owe"      => transaction type = "expense"
+ * - direction = "owed_to_me" => transaction type = "income"
  */
 export async function addDebtPayment({
   profileId,
@@ -49,8 +49,9 @@ export async function addDebtPayment({
     throw new Error("Debt not found for active profile");
   }
 
-  // 1) Optionally create a transaction
+  // 1) optionally create a transaction
   let createdTxId = null;
+
   if (createTransaction) {
     const txType = debt.direction === "i_owe" ? "expense" : "income";
 
@@ -65,17 +66,18 @@ export async function addDebtPayment({
     });
   }
 
-  // 2) Save debt payment
+  // 2) save debt payment with transactionId link
   await db.debtPayments.add({
     profileId,
     debtId,
+    transactionId: createdTxId,
     date,
     amount,
     note,
     createdAt: now,
   });
 
-  // 3) Recalc status
+  // 3) recalc status
   await recalcDebtStatus(profileId, debtId);
 
   return { createdTxId };
@@ -115,8 +117,8 @@ export async function getDebtsWithStats(profileId) {
     const paid = payByDebt.get(d.id) ?? 0;
     const remaining = Math.max(0, (d.principal ?? 0) - paid);
 
+    // compute fresh status for UI safety
     let status = d.status;
-    // compute a fresh status for UI safety
     if (remaining <= 0.000001) status = "closed";
     else if (d.dueDate && d.dueDate < today) status = "overdue";
     else status = "active";
@@ -151,11 +153,23 @@ export async function deleteDebt(profileId, debtId) {
   });
 }
 
-/** Delete payment */
+/**
+ * Delete a debt payment.
+ * If it has transactionId, asks whether to delete the linked transaction too.
+ */
 export async function deleteDebtPayment(profileId, paymentId) {
   const p = await db.debtPayments.get(paymentId);
   if (!p || p.profileId !== profileId) return;
 
-  await db.debtPayments.delete(paymentId);
+  const linkedTx = p.transactionId ? await db.transactions.get(p.transactionId) : null;
+  const deleteLinkedTx = linkedTx ? window.confirm("Також видалити пов’язану транзакцію?") : false;
+
+  await db.transaction("rw", db.debtPayments, db.transactions, async () => {
+    await db.debtPayments.delete(paymentId);
+    if (deleteLinkedTx && p.transactionId) {
+      await db.transactions.delete(p.transactionId);
+    }
+  });
+
   await recalcDebtStatus(profileId, p.debtId);
 }

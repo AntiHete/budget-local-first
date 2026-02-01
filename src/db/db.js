@@ -37,3 +37,17 @@ db.version(4).stores({
   debts: "++id, profileId, direction, counterparty, principal, currency, startDate, dueDate, status, createdAt",
   debtPayments: "++id, profileId, debtId, date, amount, createdAt",
 });
+
+db.version(5).stores({
+  profiles: "++id, name, createdAt",
+  categories: "++id, profileId, type, name",
+  transactions: "++id, profileId, date, type, categoryId, amount, createdAt",
+  budgets: "++id, profileId, month, categoryId, limit",
+  payments: "++id, profileId, dueDate, title, amount, categoryId, status, createdAt",
+
+  debts: "++id, profileId, direction, counterparty, principal, currency, startDate, dueDate, status, createdAt",
+
+  // transactionId
+  debtPayments: "++id, profileId, debtId, transactionId, date, amount, createdAt",
+});
+ 

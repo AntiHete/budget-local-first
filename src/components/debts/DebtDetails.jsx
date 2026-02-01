@@ -2,7 +2,12 @@ import React, { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useProfile } from "../../context/ProfileContext";
 import { db } from "../../db/db";
-import { addDebtPayment, deleteDebtPayment, getDebtPayments, recalcDebtStatus } from "../../services/debtService";
+import {
+  addDebtPayment,
+  deleteDebtPayment,
+  getDebtPayments,
+  recalcDebtStatus,
+} from "../../services/debtService";
 import { todayISO } from "../../services/dateService";
 
 function fmtUAH(x) {
@@ -31,7 +36,7 @@ export default function DebtDetails({ debtId, onClose }) {
     return getDebtPayments(activeProfileId, debtId);
   }, [activeProfileId, debtId]);
 
-  // Категорії для транзакції — залежно від напрямку
+  // Categories for linked transaction (depends on direction)
   const txCategories = useLiveQuery(async () => {
     if (!activeProfileId || !debt) return [];
     const needType = debt.direction === "i_owe" ? "expense" : "income";
@@ -109,11 +114,7 @@ export default function DebtDetails({ debtId, onClose }) {
             Створити транзакцію ({txTypeLabel})
           </label>
 
-          {createTx && (
-            <span className="muted">
-              (тип транзакції: {txTypeNeed})
-            </span>
-          )}
+          {createTx && <span className="muted">(тип транзакції: {txTypeNeed})</span>}
         </div>
 
         {createTx && (
@@ -145,7 +146,12 @@ export default function DebtDetails({ debtId, onClose }) {
 
           <label className="labelCol">
             Сума
-            <input className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(",", "."))} />
+            <input
+              className="input"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.replace(",", "."))}
+            />
           </label>
 
           <label className="labelCol">
@@ -169,6 +175,7 @@ export default function DebtDetails({ debtId, onClose }) {
               <th>Дата</th>
               <th>Сума</th>
               <th>Коментар</th>
+              <th>Транзакція</th>
               <th></th>
             </tr>
           </thead>
@@ -178,6 +185,15 @@ export default function DebtDetails({ debtId, onClose }) {
                 <td>{p.date}</td>
                 <td>{fmtUAH(p.amount)}</td>
                 <td>{p.note ?? ""}</td>
+                <td>
+                  {p.transactionId ? (
+                    <a className="navLink" href="/transactions" title={`Transaction ID: ${p.transactionId}`}>
+                      Відкрити
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td style={{ textAlign: "right" }}>
                   <button className="btn btnDanger" type="button" onClick={() => removePayment(p.id)}>
                     Видалити
@@ -188,7 +204,7 @@ export default function DebtDetails({ debtId, onClose }) {
 
             {(payments ?? []).length === 0 && (
               <tr>
-                <td colSpan="4" className="muted" style={{ padding: 12 }}>
+                <td colSpan="5" className="muted" style={{ padding: 12 }}>
                   Поки немає платежів
                 </td>
               </tr>
@@ -198,7 +214,7 @@ export default function DebtDetails({ debtId, onClose }) {
       </div>
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Якщо увімкнено “Створити транзакцію”, платіж впливатиме на аналітику/бюджети як звичайна транзакція.
+        Якщо створюється транзакція, вона прив’язується до платежу через transactionId.
       </p>
     </div>
   );
