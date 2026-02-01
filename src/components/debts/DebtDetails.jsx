@@ -11,9 +11,13 @@ function fmtUAH(x) {
 
 export default function DebtDetails({ debtId, onClose }) {
   const { activeProfileId } = useProfile();
+
   const [date, setDate] = useState(todayISO());
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+
+  const [createTx, setCreateTx] = useState(true);
+  const [txCategoryId, setTxCategoryId] = useState("");
 
   const debt = useLiveQuery(async () => {
     if (!activeProfileId || !debtId) return null;
@@ -27,11 +31,21 @@ export default function DebtDetails({ debtId, onClose }) {
     return getDebtPayments(activeProfileId, debtId);
   }, [activeProfileId, debtId]);
 
+  // Категорії для транзакції — залежно від напрямку
+  const txCategories = useLiveQuery(async () => {
+    if (!activeProfileId || !debt) return [];
+    const needType = debt.direction === "i_owe" ? "expense" : "income";
+    const cats = await db.categories.where({ profileId: activeProfileId, type: needType }).toArray();
+    cats.sort((a, b) => a.name.localeCompare(b.name));
+    return cats;
+  }, [activeProfileId, debt?.direction]);
+
   const paid = useMemo(() => (payments ?? []).reduce((s, p) => s + (p.amount ?? 0), 0), [payments]);
   const remaining = useMemo(() => Math.max(0, (debt?.principal ?? 0) - paid), [debt, paid]);
 
   async function addPayment() {
-    if (!activeProfileId || !debtId) return;
+    if (!activeProfileId || !debtId || !debt) return;
+
     const num = Number(amount);
     if (!Number.isFinite(num) || num <= 0) return alert("Сума має бути > 0");
     if (!date) return alert("Вкажи дату");
@@ -42,6 +56,8 @@ export default function DebtDetails({ debtId, onClose }) {
       date,
       amount: num,
       note: note.trim() || null,
+      createTransaction: createTx,
+      txCategoryId: txCategoryId ? Number(txCategoryId) : null,
     });
 
     setAmount("");
@@ -58,11 +74,16 @@ export default function DebtDetails({ debtId, onClose }) {
 
   if (!debt) return null;
 
+  const txTypeLabel = debt.direction === "i_owe" ? "витрату" : "дохід";
+  const txTypeNeed = debt.direction === "i_owe" ? "expense" : "income";
+
   return (
     <div className="card">
       <div className="rowBetween">
         <h2>Борг: {debt.counterparty}</h2>
-        <button className="btn" type="button" onClick={onClose}>Закрити</button>
+        <button className="btn" type="button" onClick={onClose}>
+          Закрити
+        </button>
       </div>
 
       <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
@@ -76,6 +97,46 @@ export default function DebtDetails({ debtId, onClose }) {
 
       <div className="card" style={{ marginTop: 12 }}>
         <h3>Додати платіж</h3>
+
+        <div className="row" style={{ marginBottom: 10 }}>
+          <label className="label" style={{ cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={createTx}
+              onChange={(e) => setCreateTx(e.target.checked)}
+              style={{ marginRight: 8 }}
+            />
+            Створити транзакцію ({txTypeLabel})
+          </label>
+
+          {createTx && (
+            <span className="muted">
+              (тип транзакції: {txTypeNeed})
+            </span>
+          )}
+        </div>
+
+        {createTx && (
+          <div className="row" style={{ marginBottom: 10 }}>
+            <label className="label">
+              Категорія для транзакції:
+              <select
+                className="select"
+                value={txCategoryId}
+                onChange={(e) => setTxCategoryId(e.target.value)}
+                style={{ marginLeft: 8 }}
+              >
+                <option value="">— без категорії —</option>
+                {(txCategories ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
         <div className="grid3">
           <label className="labelCol">
             Дата
@@ -93,7 +154,9 @@ export default function DebtDetails({ debtId, onClose }) {
           </label>
 
           <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn" type="button" onClick={addPayment}>Додати</button>
+            <button className="btn" type="button" onClick={addPayment}>
+              Додати
+            </button>
           </div>
         </div>
       </div>
@@ -133,6 +196,10 @@ export default function DebtDetails({ debtId, onClose }) {
           </tbody>
         </table>
       </div>
+
+      <p className="muted" style={{ marginTop: 8 }}>
+        Якщо увімкнено “Створити транзакцію”, платіж впливатиме на аналітику/бюджети як звичайна транзакція.
+      </p>
     </div>
   );
 }

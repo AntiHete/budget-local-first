@@ -28,10 +28,44 @@ export async function createDebt({
   return id;
 }
 
-/** Add a payment to a debt */
-export async function addDebtPayment({ profileId, debtId, date, amount, note = null }) {
+/**
+ * Add a payment to a debt (optionally creates a transaction).
+ * - If direction = "i_owe"  => transaction type = "expense"
+ * - If direction = "owed_to_me" => transaction type = "income"
+ */
+export async function addDebtPayment({
+  profileId,
+  debtId,
+  date,
+  amount,
+  note = null,
+  createTransaction = false,
+  txCategoryId = null,
+}) {
   const now = new Date().toISOString();
 
+  const debt = await db.debts.get(debtId);
+  if (!debt || debt.profileId !== profileId) {
+    throw new Error("Debt not found for active profile");
+  }
+
+  // 1) Optionally create a transaction
+  let createdTxId = null;
+  if (createTransaction) {
+    const txType = debt.direction === "i_owe" ? "expense" : "income";
+
+    createdTxId = await db.transactions.add({
+      profileId,
+      date,
+      type: txType,
+      amount,
+      categoryId: txCategoryId ? Number(txCategoryId) : null,
+      note: note ? `[Debt] ${note}` : "[Debt] payment",
+      createdAt: now,
+    });
+  }
+
+  // 2) Save debt payment
   await db.debtPayments.add({
     profileId,
     debtId,
@@ -41,8 +75,10 @@ export async function addDebtPayment({ profileId, debtId, date, amount, note = n
     createdAt: now,
   });
 
-  // Після додавання платежу — оновимо статус боргу
+  // 3) Recalc status
   await recalcDebtStatus(profileId, debtId);
+
+  return { createdTxId };
 }
 
 /** Calculate remaining + update status */
@@ -66,7 +102,7 @@ export async function recalcDebtStatus(profileId, debtId) {
 export async function getDebtsWithStats(profileId) {
   const debts = await db.debts.where("profileId").equals(profileId).toArray();
 
-  // Підтягнемо всі платежі одним запитом
+  // Fetch all payments in one go
   const payments = await db.debtPayments.where("profileId").equals(profileId).toArray();
   const payByDebt = new Map();
   for (const p of payments) {
@@ -80,7 +116,7 @@ export async function getDebtsWithStats(profileId) {
     const remaining = Math.max(0, (d.principal ?? 0) - paid);
 
     let status = d.status;
-    // Безпечна авто-логіка: якщо статус застарів — підкажемо UI (але не пишемо в DB тут)
+    // compute a fresh status for UI safety
     if (remaining <= 0.000001) status = "closed";
     else if (d.dueDate && d.dueDate < today) status = "overdue";
     else status = "active";
@@ -88,7 +124,7 @@ export async function getDebtsWithStats(profileId) {
     return { ...d, paid, remaining, computedStatus: status };
   });
 
-  // Сортування: overdue -> active -> closed, потім за dueDate
+  // Sort: overdue -> active -> closed, then by dueDate
   const order = { overdue: 0, active: 1, closed: 2 };
   result.sort((a, b) => {
     const sa = order[a.computedStatus] ?? 9;
@@ -119,6 +155,7 @@ export async function deleteDebt(profileId, debtId) {
 export async function deleteDebtPayment(profileId, paymentId) {
   const p = await db.debtPayments.get(paymentId);
   if (!p || p.profileId !== profileId) return;
+
   await db.debtPayments.delete(paymentId);
   await recalcDebtStatus(profileId, p.debtId);
 }
