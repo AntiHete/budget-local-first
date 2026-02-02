@@ -7,6 +7,10 @@ import CategoryForecastTable from "../components/forecast/CategoryForecastTable"
 import ScenarioPanel from "../components/forecast/ScenarioPanel";
 import { db } from "../db/db";
 
+import { buildCashflowForecast } from "../services/cashflowService";
+import CashflowChart from "../components/forecast/CashflowChart";
+import CashflowTable from "../components/forecast/CashflowTable";
+
 function toNumberOrZero(x) {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
@@ -16,6 +20,7 @@ export default function ForecastPage() {
   const { activeProfileId } = useProfile();
   const [baseMonth, setBaseMonth] = useState(currentMonth());
 
+  // --- Category forecast (rolling avg)
   const baseForecast = useLiveQuery(async () => {
     if (!activeProfileId || !baseMonth) return null;
     return forecastExpenseByCategory(activeProfileId, baseMonth, 3);
@@ -51,6 +56,12 @@ export default function ForecastPage() {
 
   const info = scenarioResult?.scenarioInfo;
 
+  // --- Cash-flow (30 days)
+  const cashflow = useLiveQuery(async () => {
+    if (!activeProfileId) return null;
+    return buildCashflowForecast(activeProfileId, 30);
+  }, [activeProfileId]);
+
   return (
     <>
       <h1>Прогноз</h1>
@@ -72,7 +83,7 @@ export default function ForecastPage() {
         </div>
 
         <p className="muted" style={{ marginTop: 8 }}>
-          Базовий прогноз: середні витрати по категоріях за 3 попередні місяці.
+          Тут: (1) прогноз по категоріях (rolling avg) + (2) сценарій “що буде, якщо…” + (3) cash-flow на 30 днів.
         </p>
       </div>
 
@@ -93,7 +104,7 @@ export default function ForecastPage() {
             {info.appliedToCategory && <span className="badge">Категорія: {info.appliedToCategory}</span>}
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
-            Це пояснюваний сценарний аналіз: ти додаєш одну подію і бачиш зміну прогнозу.
+            Сценарій змінює прогноз витрат (expense) або показує чистий ефект (income).
           </p>
         </div>
       )}
@@ -103,6 +114,9 @@ export default function ForecastPage() {
         nextMonth={scenarioResult?.nextMonth}
         rows={scenarioResult?.rows}
       />
+
+      <CashflowChart points={cashflow?.points ?? []} />
+      <CashflowTable points={cashflow?.points ?? []} />
     </>
   );
 }
