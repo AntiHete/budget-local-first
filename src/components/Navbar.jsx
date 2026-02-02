@@ -28,6 +28,9 @@ export default function Navbar() {
             <NavLink to="/analytics" className={linkClass}>
               Аналітика
             </NavLink>
+            <NavLink to="/forecast" className={linkClass}>
+              Прогноз
+            </NavLink>
             <NavLink to="/settings" className={linkClass}>
               Налаштування
             </NavLink>
