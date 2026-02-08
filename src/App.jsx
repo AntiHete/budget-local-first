@@ -9,6 +9,7 @@ import DebtsPage from "./pages/DebtsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ForecastPage from "./pages/ForecastPage";
 import SettingsPage from "./pages/SettingsPage";
+import BackupPage from "./pages/BackupPage";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/debts" element={<DebtsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/forecast" element={<ForecastPage />} />
+        <Route path="/backup" element={<BackupPage />} />
         <Route path="/settings" element={<SettingsPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

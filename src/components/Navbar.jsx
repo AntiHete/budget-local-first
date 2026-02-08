@@ -13,27 +13,14 @@ export default function Navbar() {
           <div className="brand">Budget</div>
 
           <nav className="nav">
-            <NavLink to="/" className={linkClass} end>
-              Дашборд
-            </NavLink>
-            <NavLink to="/transactions" className={linkClass}>
-              Транзакції
-            </NavLink>
-            <NavLink to="/budgets" className={linkClass}>
-              Бюджети
-            </NavLink>
-            <NavLink to="/debts" className={linkClass}>
-              Борги
-            </NavLink>
-            <NavLink to="/analytics" className={linkClass}>
-              Аналітика
-            </NavLink>
-            <NavLink to="/forecast" className={linkClass}>
-              Прогноз
-            </NavLink>
-            <NavLink to="/settings" className={linkClass}>
-              Налаштування
-            </NavLink>
+            <NavLink to="/" className={linkClass} end>Дашборд</NavLink>
+            <NavLink to="/transactions" className={linkClass}>Транзакції</NavLink>
+            <NavLink to="/budgets" className={linkClass}>Бюджети</NavLink>
+            <NavLink to="/debts" className={linkClass}>Борги</NavLink>
+            <NavLink to="/analytics" className={linkClass}>Аналітика</NavLink>
+            <NavLink to="/forecast" className={linkClass}>Прогноз</NavLink>
+            <NavLink to="/backup" className={linkClass}>Backup</NavLink>
+            <NavLink to="/settings" className={linkClass}>Налаштування</NavLink>
           </nav>
 
           <ThemeToggle />
