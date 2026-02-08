@@ -21,7 +21,7 @@ export default function ScenarioPanel({
           }
           style={{ marginRight: 8 }}
         />
-        Увімкнути сценарій (вплине на прогноз {nextMonth})
+        Увімкнути сценарій
       </label>
 
       {enabled && (
@@ -58,13 +58,25 @@ export default function ScenarioPanel({
             </label>
 
             <label className="labelCol">
-              Місяць
+              Місяць для прогнозу категорій
               <input
                 className="input"
                 type="month"
                 value={nextMonth}
                 disabled
-                title="У цьому сценарії впливаємо на наступний місяць"
+                title="Сценарій впливає на прогноз витрат наступного місяця"
+              />
+            </label>
+
+            <label className="labelCol">
+              Дата для cash-flow (30 днів)
+              <input
+                className="input"
+                type="date"
+                value={scenario.date || ""}
+                onChange={(e) =>
+                  setScenario((s) => ({ ...s, date: e.target.value }))
+                }
               />
             </label>
 
@@ -93,8 +105,8 @@ export default function ScenarioPanel({
           </div>
 
           <p className="muted" style={{ marginTop: 8 }}>
-            Витрата збільшує прогноз витрат (по категорії або “без категорії”). Дохід не змінює витрати, але показує
-            чистий ефект (net impact).
+            * Прогноз по категоріях змінюється для <b>{nextMonth}</b>.<br />
+            * Cash-flow змінюється у вибрану дату (без запису в БД).
           </p>
         </>
       )}

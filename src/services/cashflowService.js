@@ -35,20 +35,29 @@ export async function getCurrentBalance(profileId) {
 
 /**
  * Cash-flow forecast for N days starting today.
+ *
+ * scenario (optional):
+ * {
+ *   enabled: boolean,
+ *   type: "expense" | "income",
+ *   amount: number,
+ *   date: "YYYY-MM-DD"
+ * }
+ *
  * - Applies transactions by date
  * - Applies planned payments by dueDate as expense
+ * - Applies scenario as extra delta on scenario.date (no DB write)
  *
  * Returns:
  * {
  *  startDate,
  *  days,
  *  startBalance,
- *  points: [{ date, deltaIncome, deltaExpense, deltaPlannedPayments, balance }]
+ *  points: [{ date, deltaIncome, deltaExpense, deltaPlannedPayments, deltaScenario, balance }]
  * }
  */
-export async function buildCashflowForecast(profileId, days = 30) {
+export async function buildCashflowForecast(profileId, days = 30, scenario = null) {
   const startDate = todayISO();
-
   const startBalance = await getCurrentBalance(profileId);
 
   // Load all transactions for profile once
@@ -76,6 +85,19 @@ export async function buildCashflowForecast(profileId, days = 30) {
     payByDate.set(date, (payByDate.get(date) ?? 0) + (p.amount ?? 0));
   }
 
+  // Scenario: inject virtual delta for a specific date (no DB write)
+  let scenarioDate = null;
+  let scenarioDelta = 0; // +income or -expense
+  if (scenario?.enabled) {
+    const amt = Number(scenario.amount);
+    const dt = String(scenario.date ?? "");
+    if (Number.isFinite(amt) && amt > 0 && dt.length === 10) {
+      scenarioDate = dt;
+      scenarioDelta = scenario.type === "income" ? +amt : -amt;
+      scenarioDelta = round2(scenarioDelta);
+    }
+  }
+
   // Build timeline
   const points = [];
   let balance = startBalance;
@@ -90,17 +112,20 @@ export async function buildCashflowForecast(profileId, days = 30) {
     const deltaExpense = round2(tx.expense);
     const deltaPlannedPayments = round2(planned);
 
-    // apply
-    balance = round2(balance + deltaIncome - deltaExpense - deltaPlannedPayments);
+    const deltaScenario = date === scenarioDate ? scenarioDelta : 0;
+
+    // apply: balance += income - expense - plannedPayments + scenarioDelta
+    balance = round2(balance + deltaIncome - deltaExpense - deltaPlannedPayments + deltaScenario);
 
     points.push({
       date,
       deltaIncome,
       deltaExpense,
       deltaPlannedPayments,
+      deltaScenario,
       balance,
     });
   }
 
-  return { startDate, days, startBalance, points };
+  return { startDate, days, startBalance, points, scenarioAppliedDate: scenarioDate };
 }

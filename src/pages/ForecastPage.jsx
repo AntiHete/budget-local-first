@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useProfile } from "../context/ProfileContext";
-import { currentMonth } from "../services/dateService";
+import { currentMonth, todayISO } from "../services/dateService";
 import { applyScenarioToForecast, forecastExpenseByCategory } from "../services/forecastService";
 import CategoryForecastTable from "../components/forecast/CategoryForecastTable";
 import ScenarioPanel from "../components/forecast/ScenarioPanel";
@@ -14,6 +14,16 @@ import CashflowTable from "../components/forecast/CashflowTable";
 function toNumberOrZero(x) {
   const n = Number(x);
   return Number.isFinite(n) ? n : 0;
+}
+
+function addDaysISO(dateISO, days) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export default function ForecastPage() {
@@ -33,15 +43,18 @@ export default function ForecastPage() {
     return cats;
   }, [activeProfileId]);
 
+  const nextMonth = baseForecast?.nextMonth ?? "";
+
+  // --- Scenario state (now includes date for cashflow)
   const [scenario, setScenario] = useState({
     enabled: false,
     type: "expense", // expense | income
     amount: "",
     categoryId: null,
+    date: addDaysISO(todayISO(), 1), // default: tomorrow
   });
 
-  const nextMonth = baseForecast?.nextMonth ?? "";
-
+  // --- Apply scenario to category forecast
   const scenarioResult = useMemo(() => {
     if (!baseForecast) return null;
     const sc = {
@@ -56,11 +69,19 @@ export default function ForecastPage() {
 
   const info = scenarioResult?.scenarioInfo;
 
-  // --- Cash-flow (30 days)
+  // --- Cash-flow (30 days) with scenario
   const cashflow = useLiveQuery(async () => {
     if (!activeProfileId) return null;
-    return buildCashflowForecast(activeProfileId, 30);
-  }, [activeProfileId]);
+
+    const sc = {
+      enabled: scenario.enabled,
+      type: scenario.type,
+      amount: toNumberOrZero(scenario.amount),
+      date: scenario.date,
+    };
+
+    return buildCashflowForecast(activeProfileId, 30, sc);
+  }, [activeProfileId, scenario.enabled, scenario.type, scenario.amount, scenario.date]);
 
   return (
     <>
@@ -102,9 +123,10 @@ export default function ForecastPage() {
               Net impact: {info.netImpact > 0 ? `+${info.netImpact}` : `${info.netImpact}`} UAH
             </span>
             {info.appliedToCategory && <span className="badge">Категорія: {info.appliedToCategory}</span>}
+            {scenario.date && <span className="badge">Cash-flow дата: {scenario.date}</span>}
           </div>
           <p className="muted" style={{ marginTop: 8 }}>
-            Сценарій змінює прогноз витрат (expense) або показує чистий ефект (income).
+            Вплив на cash-flow застосовується в обрану дату (віртуально, без запису в IndexedDB).
           </p>
         </div>
       )}
