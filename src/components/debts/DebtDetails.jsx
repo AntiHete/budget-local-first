@@ -187,7 +187,7 @@ export default function DebtDetails({ debtId, onClose }) {
                 <td>{p.note ?? ""}</td>
                 <td>
                   {p.transactionId ? (
-                    <a className="navLink" href="/transactions" title={`Transaction ID: ${p.transactionId}`}>
+                    <a className="navLink" href={`/transactions?highlight=${p.transactionId}`} title={`Transaction ID: ${p.transactionId}`}>
                       Відкрити
                     </a>
                   ) : (
@@ -214,7 +214,7 @@ export default function DebtDetails({ debtId, onClose }) {
       </div>
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Якщо створюється транзакція, вона прив’язується до платежу через transactionId.
+        “Відкрити” веде на транзакції з підсвіткою через highlight параметр.
       </p>
     </div>
   );
