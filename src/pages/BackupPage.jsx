@@ -1,8 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
 import { useProfile } from "../context/ProfileContext";
 import {
+  analyzeBackupCompatibility,
+  buildAllBackupFilename,
+  buildProfileBackupFilename,
   downloadJson,
   exportAllBackup,
   exportProfileBackup,
@@ -21,18 +24,22 @@ export default function BackupPage() {
     return p;
   }, []);
 
+  const activeProfile = useMemo(() => {
+    return (profiles ?? []).find((p) => p.id === activeProfileId) ?? null;
+  }, [profiles, activeProfileId]);
+
   async function onExportActive() {
-    if (!activeProfileId) return alert("Спочатку обери профіль");
+    if (!activeProfileId || !activeProfile) return alert("Спочатку обери профіль");
     setStatus("Експорт профілю...");
     const data = await exportProfileBackup(activeProfileId);
-    downloadJson(data, `backup_profile_${activeProfileId}.json`);
+    downloadJson(data, buildProfileBackupFilename(activeProfile));
     setStatus("Готово ✅");
   }
 
   async function onExportAll() {
     setStatus("Експорт усіх даних...");
     const data = await exportAllBackup();
-    downloadJson(data, "backup_all.json");
+    downloadJson(data, buildAllBackupFilename());
     setStatus("Готово ✅");
   }
 
@@ -41,6 +48,22 @@ export default function BackupPage() {
       setStatus("Читаю файл...");
       const text = await file.text();
       const parsed = JSON.parse(text);
+
+      const check = analyzeBackupCompatibility(parsed);
+      if (!check.ok) {
+        setStatus(`Помилка: ${check.errors.join(" | ")}`);
+        return;
+      }
+
+      if (check.warnings.length > 0) {
+        const ok = window.confirm(
+          `Є попередження сумісності:\n- ${check.warnings.join("\n- ")}\n\nПродовжити імпорт?`
+        );
+        if (!ok) {
+          setStatus("Скасовано користувачем.");
+          return;
+        }
+      }
 
       if (mode === "new") {
         setStatus("Імпортую як новий профіль...");
@@ -76,7 +99,7 @@ export default function BackupPage() {
         </div>
 
         <p className="muted" style={{ marginTop: 8 }}>
-          Експорт — JSON файл. Підходить для перенесення між пристроями (local-first).
+          Ім’я файлу тепер включає назву профілю/час. Експорт — JSON (local-first перенесення).
         </p>
       </div>
 
@@ -86,7 +109,12 @@ export default function BackupPage() {
         <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
           <label className="label">
             Режим:
-            <select className="select" value={mode} onChange={(e) => setMode(e.target.value)} style={{ marginLeft: 8 }}>
+            <select
+              className="select"
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+              style={{ marginLeft: 8 }}
+            >
               <option value="new">Імпорт як новий профіль (рекомендовано)</option>
               <option value="replace">Замінити дані активного профілю</option>
             </select>

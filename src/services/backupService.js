@@ -4,9 +4,26 @@ function nowISO() {
   return new Date().toISOString();
 }
 
-function makeFilename(prefix) {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  return `${prefix}_${ts}.json`;
+function tsForFilename() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+export function safeFilenamePart(s) {
+  return String(s ?? "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 60) || "profile";
+}
+
+export function buildAllBackupFilename() {
+  return `backup_all_${tsForFilename()}.json`;
+}
+
+export function buildProfileBackupFilename(profile) {
+  const name = safeFilenamePart(profile?.name ?? "profile");
+  const id = profile?.id ?? "x";
+  return `backup_profile_${name}_id${id}_${tsForFilename()}.json`;
 }
 
 export function downloadJson(data, filename) {
@@ -23,6 +40,58 @@ export function downloadJson(data, filename) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Returns: { ok: boolean, warnings: string[], errors: string[] }
+ * - errors => stop
+ * - warnings => confirm
+ */
+export function analyzeBackupCompatibility(parsedBackup) {
+  const errors = [];
+  const warnings = [];
+
+  if (!parsedBackup || typeof parsedBackup !== "object") {
+    errors.push("Файл не є коректним JSON об'єктом.");
+    return { ok: false, warnings, errors };
+  }
+
+  if (!parsedBackup.meta || !parsedBackup.data) {
+    errors.push("Немає meta/data у backup файлі.");
+    return { ok: false, warnings, errors };
+  }
+
+  if (parsedBackup.meta.app && parsedBackup.meta.app !== "budget-local-first") {
+    errors.push(`Невірний app у meta: ${parsedBackup.meta.app}`);
+  }
+
+  // if schemaVersion is missing -> just warn (old exports)
+  if (parsedBackup.meta.schemaVersion == null) {
+    warnings.push("Backup без schemaVersion (старий формат). Імпорт можливий, але обережно.");
+  }
+
+  // if backup from newer DB version -> warn
+  const backupDbVersion = Number(parsedBackup.meta.dbVersion ?? NaN);
+  if (Number.isFinite(backupDbVersion)) {
+    if (backupDbVersion > db.verno) {
+      warnings.push(
+        `Backup створено з новішої версії БД (backup: ${backupDbVersion}, у вас: ${db.verno}). Деякі поля можуть не імпортуватись.`
+      );
+    }
+  } else {
+    warnings.push("У meta.dbVersion немає числа — не можу перевірити сумісність версії БД.");
+  }
+
+  // data shape check
+  const d = parsedBackup.data;
+  const keys = ["profiles", "categories", "transactions", "budgets", "payments", "debts", "debtPayments"];
+  for (const k of keys) {
+    if (!Array.isArray(d[k])) {
+      errors.push(`Невірна структура data.${k} (має бути масив).`);
+    }
+  }
+
+  return { ok: errors.length === 0, warnings, errors };
+}
+
 export async function exportAllBackup() {
   const [profiles, categories, transactions, budgets, payments, debts, debtPayments] = await Promise.all([
     db.profiles.toArray(),
@@ -37,6 +106,7 @@ export async function exportAllBackup() {
   return {
     meta: {
       app: "budget-local-first",
+      schemaVersion: 1,
       exportedAt: nowISO(),
       dbVersion: db.verno,
       scope: "all",
@@ -61,6 +131,7 @@ export async function exportProfileBackup(profileId) {
   return {
     meta: {
       app: "budget-local-first",
+      schemaVersion: 1,
       exportedAt: nowISO(),
       dbVersion: db.verno,
       scope: "profile",
@@ -77,15 +148,6 @@ export async function exportProfileBackup(profileId) {
       debtPayments,
     },
   };
-}
-
-function validateBackupShape(obj) {
-  if (!obj || typeof obj !== "object") return false;
-  if (!obj.meta || !obj.data) return false;
-  const d = obj.data;
-  const keys = ["profiles", "categories", "transactions", "budgets", "payments", "debts", "debtPayments"];
-  for (const k of keys) if (!Array.isArray(d[k])) return false;
-  return true;
 }
 
 export async function deleteProfileData(profileId) {
@@ -108,8 +170,6 @@ export async function deleteProfileData(profileId) {
  * - transactionId (for debtPayments)
  */
 export async function importBackupAsNewProfile(parsedBackup) {
-  if (!validateBackupShape(parsedBackup)) throw new Error("Invalid backup file");
-
   const d = parsedBackup.data;
   const sourceProfile = d.profiles?.[0];
   const newName = `${sourceProfile?.name ?? "Imported"} (imported)`;
@@ -117,14 +177,13 @@ export async function importBackupAsNewProfile(parsedBackup) {
 
   let newProfileId = null;
 
-  const categoryIdMap = new Map();   // old -> new
-  const debtIdMap = new Map();       // old -> new
-  const txIdMap = new Map();         // old -> new
+  const categoryIdMap = new Map(); // old -> new
+  const debtIdMap = new Map(); // old -> new
+  const txIdMap = new Map(); // old -> new
 
   await db.transaction("rw", db.profiles, db.categories, db.transactions, db.budgets, db.payments, db.debts, db.debtPayments, async () => {
     newProfileId = await db.profiles.add({ name: newName, createdAt });
 
-    // categories
     for (const c of d.categories) {
       const oldId = c.id;
       const newId = await db.categories.add({
@@ -136,7 +195,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
       if (oldId != null) categoryIdMap.set(oldId, newId);
     }
 
-    // debts
     for (const debt of d.debts) {
       const oldId = debt.id;
       const newId = await db.debts.add({
@@ -153,7 +211,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
       if (oldId != null) debtIdMap.set(oldId, newId);
     }
 
-    // transactions
     for (const t of d.transactions) {
       const oldId = t.id;
       const newId = await db.transactions.add({
@@ -168,7 +225,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
       if (oldId != null) txIdMap.set(oldId, newId);
     }
 
-    // budgets
     for (const b of d.budgets) {
       await db.budgets.add({
         profileId: newProfileId,
@@ -178,7 +234,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
       });
     }
 
-    // payments (planned/done)
     for (const p of d.payments) {
       await db.payments.add({
         profileId: newProfileId,
@@ -191,7 +246,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
       });
     }
 
-    // debtPayments (link remap)
     for (const dp of d.debtPayments) {
       await db.debtPayments.add({
         profileId: newProfileId,
@@ -213,8 +267,6 @@ export async function importBackupAsNewProfile(parsedBackup) {
  * Keeps the same profile id, deletes its existing data, imports backup content into it.
  */
 export async function replaceProfileFromBackup(profileId, parsedBackup) {
-  if (!validateBackupShape(parsedBackup)) throw new Error("Invalid backup file");
-
   const d = parsedBackup.data;
   const createdAt = nowISO();
 
@@ -225,7 +277,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
   await db.transaction("rw", db.categories, db.transactions, db.budgets, db.payments, db.debts, db.debtPayments, async () => {
     await deleteProfileData(profileId);
 
-    // categories
     for (const c of d.categories) {
       const oldId = c.id;
       const newId = await db.categories.add({
@@ -237,7 +288,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
       if (oldId != null) categoryIdMap.set(oldId, newId);
     }
 
-    // debts
     for (const debt of d.debts) {
       const oldId = debt.id;
       const newId = await db.debts.add({
@@ -254,7 +304,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
       if (oldId != null) debtIdMap.set(oldId, newId);
     }
 
-    // transactions
     for (const t of d.transactions) {
       const oldId = t.id;
       const newId = await db.transactions.add({
@@ -269,7 +318,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
       if (oldId != null) txIdMap.set(oldId, newId);
     }
 
-    // budgets
     for (const b of d.budgets) {
       await db.budgets.add({
         profileId,
@@ -279,7 +327,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
       });
     }
 
-    // payments
     for (const p of d.payments) {
       await db.payments.add({
         profileId,
@@ -292,7 +339,6 @@ export async function replaceProfileFromBackup(profileId, parsedBackup) {
       });
     }
 
-    // debtPayments
     for (const dp of d.debtPayments) {
       await db.debtPayments.add({
         profileId,
