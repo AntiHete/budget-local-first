@@ -10,12 +10,13 @@ import {
   exportAllBackup,
   exportProfileBackup,
   importBackupAsNewProfile,
+  mergeProfileFromBackup,
   replaceProfileFromBackup,
 } from "../services/backupService";
 
 export default function BackupPage() {
   const { activeProfileId } = useProfile();
-  const [mode, setMode] = useState("new"); // new | replace
+  const [mode, setMode] = useState("new"); // new | replace | merge
   const [status, setStatus] = useState("");
 
   const profiles = useLiveQuery(async () => {
@@ -69,14 +70,36 @@ export default function BackupPage() {
         setStatus("Імпортую як новий профіль...");
         const res = await importBackupAsNewProfile(parsed);
         setStatus(`Імпортовано ✅ Новий профіль: ${res.newName}. Перемкнись у селекторі профілю.`);
-      } else {
+        return;
+      }
+
+      if (mode === "replace") {
         if (!activeProfileId) return alert("Спочатку обери активний профіль (для replace)");
-        const ok = window.confirm("Це замінить дані АКТИВНОГО профілю. Продовжити?");
+        const ok = window.confirm("⚠️ Це замінить дані АКТИВНОГО профілю. Продовжити?");
         if (!ok) return;
         setStatus("Заміна даних активного профілю...");
         await replaceProfileFromBackup(activeProfileId, parsed);
         setStatus("Замінено ✅ Онови сторінку/перейди між вкладками.");
+        return;
       }
+
+      // merge
+      if (!activeProfileId) return alert("Спочатку обери активний профіль (для merge)");
+      const ok = window.confirm(
+        "Merge імпорт додасть дані в активний профіль БЕЗ видалення існуючих.\n" +
+          "Дублікати будуть пропускатись (за правилами дедупу).\n\nПродовжити?"
+      );
+      if (!ok) return;
+
+      setStatus("Merge-імпорт у активний профіль...");
+      const stats = await mergeProfileFromBackup(activeProfileId, parsed);
+
+      setStatus(
+        `Merge ✅ (sourceProfileId=${stats.sourceProfileId}${stats.sourceProfileName ? `, "${stats.sourceProfileName}"` : ""})\n` +
+          `Added: cat=${stats.added.categories}, tx=${stats.added.transactions}, budgets=${stats.added.budgets}, pays=${stats.added.payments}, debts=${stats.added.debts}, debtPays=${stats.added.debtPayments}\n` +
+          `Updated: budgets=${stats.updated.budgets}\n` +
+          `Skipped: cat=${stats.skipped.categories}, tx=${stats.skipped.transactions}, budgets=${stats.skipped.budgets}, pays=${stats.skipped.payments}, debts=${stats.skipped.debts}, debtPays=${stats.skipped.debtPayments}`
+      );
     } catch (e) {
       console.error(e);
       setStatus(`Помилка імпорту: ${e.message ?? String(e)}`);
@@ -99,7 +122,7 @@ export default function BackupPage() {
         </div>
 
         <p className="muted" style={{ marginTop: 8 }}>
-          Ім’я файлу тепер включає назву профілю/час. Експорт — JSON (local-first перенесення).
+          Експорт — JSON (local-first). Ім’я файлу включає назву профілю/час.
         </p>
       </div>
 
@@ -116,6 +139,7 @@ export default function BackupPage() {
               style={{ marginLeft: 8 }}
             >
               <option value="new">Імпорт як новий профіль (рекомендовано)</option>
+              <option value="merge">Merge у активний профіль (без видалення)</option>
               <option value="replace">Замінити дані активного профілю</option>
             </select>
           </label>
@@ -137,9 +161,15 @@ export default function BackupPage() {
           </p>
         )}
 
-        <div className="muted" style={{ marginTop: 10 }}>
+        {mode === "merge" && (
+          <p className="muted" style={{ marginTop: 8 }}>
+            Merge додає дані в активний профіль, дублікати пропускаються (категорії — по name+type; транзакції — по date/type/amount/category/note; бюджети — upsert).
+          </p>
+        )}
+
+        <pre className="muted" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
           {status}
-        </div>
+        </pre>
       </div>
 
       <div className="card">
