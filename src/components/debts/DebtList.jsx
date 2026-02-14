@@ -75,7 +75,7 @@ export default function DebtList({ onOpen }) {
       </div>
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Статус “overdue” визначається за дедлайном і непогашеним залишком.
+        {/* Статус “overdue” визначається за дедлайном і непогашеним залишком. */}
       </p>
     </div>
   );

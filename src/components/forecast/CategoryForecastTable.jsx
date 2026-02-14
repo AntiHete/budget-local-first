@@ -51,7 +51,7 @@ export default function CategoryForecastTable({ months, nextMonth, rows }) {
       </div>
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Прогноз є базовим і пояснюваним: використовує історичні витрати (без ML, без сервера).
+        {/* Прогноз є базовим і пояснюваним: використовує історичні витрати (без ML, без сервера). */}
       </p>
     </div>
   );

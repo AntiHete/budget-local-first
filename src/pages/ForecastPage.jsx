@@ -104,7 +104,7 @@ export default function ForecastPage() {
         </div>
 
         <p className="muted" style={{ marginTop: 8 }}>
-          Тут: (1) прогноз по категоріях (rolling avg) + (2) сценарій “що буде, якщо…” + (3) cash-flow на 30 днів.
+          {/* Тут: (1) прогноз по категоріях (rolling avg) + (2) сценарій “що буде, якщо…” + (3) cash-flow на 30 днів. */}
         </p>
       </div>
 

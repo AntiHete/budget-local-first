@@ -353,7 +353,7 @@ export default function TransactionsPage() {
         </div>
 
         <p className="muted" style={{ marginTop: 8 }}>
-          Підсвітка: відкрий <code>/transactions?highlight=ID</code>.
+          {/* Підсвітка: відкрий <code>/transactions?highlight=ID</code>. */}
         </p>
       </div>
     </>

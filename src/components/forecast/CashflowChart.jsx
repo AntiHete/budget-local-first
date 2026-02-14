@@ -45,7 +45,7 @@ export default function CashflowChart({ points }) {
       )}
 
       <p className="muted" style={{ marginTop: 8 }}>
-        Планові платежі (payments зі статусом planned) враховуються як витрати у відповідну дату.
+        {/* Планові платежі (payments зі статусом planned) враховуються як витрати у відповідну дату. */}
       </p>
     </div>
   );

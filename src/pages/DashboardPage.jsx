@@ -16,7 +16,7 @@ export default function DashboardPage() {
       <UpcomingPayments />
 
       <div className="muted" style={{ marginTop: 10 }}>
-        Далі додамо: графіки та експорт/імпорт.
+        {/* Далі додамо: графіки та експорт/імпорт. */}
       </div>
     </>
   );

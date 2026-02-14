@@ -13,7 +13,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="muted" style={{ marginTop: 10 }}>
-        Далі додамо: нагадування, графіки та прогнозування.
+        {/* Далі додамо: нагадування, графіки та прогнозування. */}
       </div>
     </>
   );
