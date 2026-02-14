@@ -12,3 +12,6 @@ CREATE TABLE IF NOT EXISTS profiles (
   name TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- A2: індекси для швидких вибірок по user_id
+CREATE INDEX IF NOT EXISTS profiles_user_created_idx ON profiles(user_id, created_at);

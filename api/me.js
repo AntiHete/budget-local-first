@@ -7,7 +7,15 @@ export default async function handler(req, res) {
 
   try {
     const payload = await verifyToken(token);
-    return sendJson(res, 200, { ok: true, user: { id: payload.sub, email: payload.email } });
+
+    return sendJson(res, 200, {
+      ok: true,
+      user: {
+        id: payload.sub,
+        email: payload.email ?? null,
+        profileId: payload.profileId ?? null,
+      },
+    });
   } catch {
     return sendJson(res, 401, { ok: false, error: "Invalid token" });
   }

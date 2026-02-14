@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     const body = Body.parse(await readJson(req));
-    const email = body.email.toLowerCase();
+    const email = body.email.toLowerCase().trim();
 
     const { rows } = await sql`
       SELECT id, email, password_hash
@@ -29,8 +29,6 @@ export default async function handler(req, res) {
     const ok = await bcrypt.compare(body.password, u.password_hash);
     if (!ok) return sendJson(res, 401, { ok: false, error: "Invalid credentials" });
 
-    const token = await signToken({ sub: u.id, email: u.email });
-
     const p = await sql`
       SELECT id
       FROM profiles
@@ -39,7 +37,22 @@ export default async function handler(req, res) {
       LIMIT 1
     `;
 
-    return sendJson(res, 200, { ok: true, token, user: { id: u.id, email: u.email }, defaultProfileId: p.rows?.[0]?.id ?? null });
+    const defaultProfileId = p.rows?.[0]?.id ?? null;
+
+    const tokenPayload = {
+      sub: u.id,
+      email: u.email,
+      ...(defaultProfileId ? { profileId: defaultProfileId } : {}),
+    };
+
+    const token = await signToken(tokenPayload);
+
+    return sendJson(res, 200, {
+      ok: true,
+      token,
+      user: { id: u.id, email: u.email },
+      defaultProfileId,
+    });
   } catch (e) {
     return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
   }
