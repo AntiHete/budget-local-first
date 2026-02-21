@@ -1,4 +1,3 @@
-// api/profiles/index.js
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { sql } from "../_lib/db";

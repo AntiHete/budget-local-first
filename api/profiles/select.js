@@ -1,4 +1,3 @@
-// api/profiles/select.js
 import { z } from "zod";
 import { sql } from "../_lib/db";
 import { sendJson, readJson, getBearerToken } from "../_lib/http";
