@@ -1,8 +1,8 @@
+// api/profiles/select.js
 import { z } from "zod";
 import { sql } from "../_lib/db";
-import { readJson, sendJson } from "../_lib/http";
-import { requireUser } from "../_lib/auth";
-import { signToken } from "../_lib/jwt";
+import { sendJson, readJson, getBearerToken } from "../_lib/http";
+import { verifyToken, signToken } from "../_lib/jwt";
 
 const Body = z.object({
   profileId: z.string().min(1),
@@ -11,8 +11,18 @@ const Body = z.object({
 export default async function handler(req, res) {
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Method Not Allowed" });
 
-  const auth = await requireUser(req, res);
-  if (!auth) return;
+  const token = getBearerToken(req);
+  if (!token) return sendJson(res, 401, { ok: false, error: "No token" });
+
+  let payload;
+  try {
+    payload = await verifyToken(token);
+  } catch {
+    return sendJson(res, 401, { ok: false, error: "Invalid token" });
+  }
+
+  const userId = payload?.sub;
+  if (!userId) return sendJson(res, 401, { ok: false, error: "Bad token payload" });
 
   try {
     const body = Body.parse(await readJson(req));
@@ -21,22 +31,22 @@ export default async function handler(req, res) {
     const { rows } = await sql`
       SELECT id, name
       FROM profiles
-      WHERE id = ${profileId} AND user_id = ${auth.userId}
+      WHERE id = ${profileId} AND user_id = ${userId}
       LIMIT 1
     `;
 
     const p = rows[0];
     if (!p) return sendJson(res, 404, { ok: false, error: "Profile not found" });
 
-    const token = await signToken({
-      sub: auth.userId,
-      email: auth.email,
+    const newToken = await signToken({
+      sub: userId,
+      email: payload.email ?? null,
       profileId: p.id,
     });
 
     return sendJson(res, 200, {
       ok: true,
-      token,
+      token: newToken,
       selectedProfileId: p.id,
       profile: { id: p.id, name: p.name },
     });

@@ -1,22 +1,33 @@
+// api/profiles/index.js
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { sql } from "../_lib/db";
-import { readJson, sendJson } from "../_lib/http";
-import { requireUser } from "../_lib/auth";
+import { sendJson, readJson, getBearerToken } from "../_lib/http";
+import { verifyToken } from "../_lib/jwt";
 
 const CreateBody = z.object({
   name: z.string().min(1).max(60),
 });
 
 export default async function handler(req, res) {
-  const auth = await requireUser(req, res);
-  if (!auth) return;
+  const token = getBearerToken(req);
+  if (!token) return sendJson(res, 401, { ok: false, error: "No token" });
+
+  let payload;
+  try {
+    payload = await verifyToken(token);
+  } catch {
+    return sendJson(res, 401, { ok: false, error: "Invalid token" });
+  }
+
+  const userId = payload?.sub;
+  if (!userId) return sendJson(res, 401, { ok: false, error: "Bad token payload" });
 
   if (req.method === "GET") {
     const { rows } = await sql`
       SELECT id, name, created_at
       FROM profiles
-      WHERE user_id = ${auth.userId}
+      WHERE user_id = ${userId}
       ORDER BY created_at ASC
     `;
 
@@ -27,7 +38,7 @@ export default async function handler(req, res) {
         name: r.name,
         createdAt: r.created_at,
       })),
-      activeProfileId: auth.profileId,
+      activeProfileId: payload.profileId ?? null,
     });
   }
 
@@ -38,7 +49,7 @@ export default async function handler(req, res) {
 
       const { rows } = await sql`
         INSERT INTO profiles (id, user_id, name)
-        VALUES (${randomUUID()}, ${auth.userId}, ${name})
+        VALUES (${randomUUID()}, ${userId}, ${name})
         RETURNING id, name, created_at
       `;
 
