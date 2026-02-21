@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- A2: індекси для швидких вибірок по user_id
 CREATE INDEX IF NOT EXISTS profiles_user_created_idx ON profiles(user_id, created_at);
 
 -- A3: transactions (server-side)
@@ -39,3 +38,27 @@ CREATE INDEX IF NOT EXISTS transactions_profile_occurred_idx
 
 CREATE INDEX IF NOT EXISTS transactions_profile_created_idx
   ON transactions(profile_id, created_at DESC);
+
+-- A4: budgets (plan vs fact)
+-- month: 'YYYY-MM'
+-- category: TEXT (поки без server categories)
+CREATE TABLE IF NOT EXISTS budgets (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+
+  month TEXT NOT NULL,
+  category TEXT NOT NULL,
+
+  limit_cents BIGINT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'UAH',
+
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Один бюджет на (profile, month, category)
+CREATE UNIQUE INDEX IF NOT EXISTS budgets_profile_month_category_uidx
+  ON budgets(profile_id, month, category);
+
+CREATE INDEX IF NOT EXISTS budgets_profile_month_idx
+  ON budgets(profile_id, month DESC);
