@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { serverCacheDb } from "../db/serverCacheDb";
-import { getToken } from "../lib/authToken";
 import { parseJwtPayload } from "../lib/jwtPayload";
 import { pullBudgetsToCache, makeBudgetKey } from "../sync/budgetsSync";
 import { upsertBudget, deleteBudget } from "../api/budgets";
+import { useAuthToken } from "./useAuthToken";
 
 export function useCachedBudgets({ month } = {}) {
-  const token = getToken();
+  const token = useAuthToken();
   const profileId = useMemo(() => parseJwtPayload(token)?.profileId ?? null, [token]);
 
   const [loading, setLoading] = useState(true);
@@ -17,15 +17,9 @@ export function useCachedBudgets({ month } = {}) {
   const items = useLiveQuery(async () => {
     if (!profileId) return [];
     if (!month) {
-      return serverCacheDb.budgets
-        .where("profileId")
-        .equals(profileId)
-        .toArray();
+      return serverCacheDb.budgets.where("profileId").equals(profileId).toArray();
     }
-    return serverCacheDb.budgets
-      .where("[profileId+month]")
-      .equals([profileId, month])
-      .toArray();
+    return serverCacheDb.budgets.where("[profileId+month]").equals([profileId, month]).toArray();
   }, [profileId, month]);
 
   const refresh = useCallback(async () => {
@@ -86,25 +80,22 @@ export function useCachedBudgets({ month } = {}) {
     [profileId]
   );
 
-  const remove = useCallback(
-    async (budgetKey) => {
-      const row = await serverCacheDb.budgets.get(budgetKey);
-      if (!row?.serverId) return;
+  const remove = useCallback(async (budgetKey) => {
+    const row = await serverCacheDb.budgets.get(budgetKey);
+    if (!row?.serverId) return;
 
-      setSyncing(true);
-      setError(null);
-      try {
-        await deleteBudget(row.serverId);
-        await serverCacheDb.budgets.delete(budgetKey);
-      } catch (e) {
-        setError(e);
-        throw e;
-      } finally {
-        setSyncing(false);
-      }
-    },
-    []
-  );
+    setSyncing(true);
+    setError(null);
+    try {
+      await deleteBudget(row.serverId);
+      await serverCacheDb.budgets.delete(budgetKey);
+    } catch (e) {
+      setError(e);
+      throw e;
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
 
   return {
     profileId,

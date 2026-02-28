@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { serverCacheDb } from "../db/serverCacheDb";
-import { getToken } from "../lib/authToken";
 import { parseJwtPayload } from "../lib/jwtPayload";
 import { pullDebtPaymentsToCache } from "../sync/debtPaymentsSync";
 import { refreshDebtToCache } from "../sync/debtsSync";
-import {
-  createDebtPayment,
-  patchDebtPayment,
-  deleteDebtPayment,
-} from "../api/debtPayments";
+import { createDebtPayment, patchDebtPayment, deleteDebtPayment } from "../api/debtPayments";
+import { useAuthToken } from "./useAuthToken";
 
 export function useCachedDebtPayments(debtId, { limit = 200 } = {}) {
-  const token = getToken();
+  const token = useAuthToken();
   const profileId = useMemo(() => parseJwtPayload(token)?.profileId ?? null, [token]);
 
   const [loading, setLoading] = useState(true);
