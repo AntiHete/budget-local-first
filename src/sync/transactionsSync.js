@@ -19,15 +19,25 @@ export async function pullTransactionsToCache({ limit = 200 } = {}) {
   if (!profileId) throw new Error("No active profileId in token");
 
   const data = await listTransactions({ limit });
-  const items = (data.transactions || []).map((t) => ({
+  const incoming = (data.transactions || []).map((t) => ({
     ...t,
     profileId,
     deletedAt: null,
     syncStatus: "synced",
   }));
 
-  await serverCacheDb.transactions.bulkPut(items);
-  return items.length;
+  const ids = incoming.map((x) => x.id);
+  const existing = await serverCacheDb.transactions.bulkGet(ids);
+
+  const toUpsert = [];
+  for (let i = 0; i < incoming.length; i++) {
+    const cur = existing[i];
+    if (cur && cur.syncStatus && cur.syncStatus !== "synced") continue; // не затираємо pending
+    toUpsert.push(incoming[i]);
+  }
+
+  if (toUpsert.length) await serverCacheDb.transactions.bulkPut(toUpsert);
+  return toUpsert.length;
 }
 
 export async function pushPendingTransactions() {
@@ -40,13 +50,11 @@ export async function pushPendingTransactions() {
     .filter((t) => t.syncStatus && t.syncStatus !== "synced")
     .toArray();
 
-  // Пушимо послідовно, щоб не ловити конфлікти/ліміти
   for (const tx of pending) {
     if (tx.syncStatus === "deleted") {
       try {
         await deleteTransaction(tx.id);
       } catch (e) {
-        // якщо вже нема на сервері — теж ок
         if (!(e?.status === 404)) throw e;
       }
       await serverCacheDb.transactions.delete(tx.id);
@@ -64,7 +72,6 @@ export async function pushPendingTransactions() {
           syncStatus: "synced",
         });
       } catch (e) {
-        // якщо id вже існує (наприклад, повторний пуш) — вважаємо синкнутим
         if (e?.status === 409) {
           await serverCacheDb.transactions.update(tx.id, { syncStatus: "synced" });
           continue;
@@ -75,8 +82,7 @@ export async function pushPendingTransactions() {
     }
 
     if (tx.syncStatus === "updated") {
-      const patch = toServerPatchBody(tx);
-      const resp = await patchTransaction(tx.id, patch);
+      const resp = await patchTransaction(tx.id, toServerPatchBody(tx));
       const saved = resp.transaction;
       await serverCacheDb.transactions.put({
         ...saved,

@@ -5,6 +5,7 @@ import { sendJson, readJson, getBearerToken } from "../_lib/http";
 import { verifyToken } from "../_lib/jwt";
 
 const CreateBody = z.object({
+  id: z.string().uuid().optional(),
   direction: z.enum(["i_owe", "owed_to_me"]),
   counterparty: z.string().min(1).max(120),
   title: z.string().max(120).optional().nullable(),
@@ -31,12 +32,11 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    const status = url.searchParams.get("status"); // open|closed|null
+    const status = url.searchParams.get("status");
     const limitRaw = url.searchParams.get("limit");
     const limit = Math.max(1, Math.min(200, Number(limitRaw ?? 50) || 50));
 
-    const statusFilter =
-      status === "open" || status === "closed" ? status : null;
+    const statusFilter = status === "open" || status === "closed" ? status : null;
 
     const { rows } = statusFilter
       ? await sql`
@@ -93,7 +93,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const id = randomUUID();
+      const id = body.id ?? randomUUID();
 
       const { rows } = await sql`
         INSERT INTO debts (
@@ -114,7 +114,11 @@ export default async function handler(req, res) {
 
       return sendJson(res, 200, { ok: true, debt: mapDebtRow({ ...rows[0], paid_cents: 0 }) });
     } catch (e) {
-      return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
+      const msg = String(e?.message ?? e);
+      if (msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique")) {
+        return sendJson(res, 409, { ok: false, error: "Debt id already exists" });
+      }
+      return sendJson(res, 400, { ok: false, error: msg });
     }
   }
 

@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { serverCacheDb } from "../db/serverCacheDb";
 import { parseJwtPayload } from "../lib/jwtPayload";
-import { pullDebtPaymentsToCache } from "../sync/debtPaymentsSync";
-import { refreshDebtToCache } from "../sync/debtsSync";
-import { createDebtPayment, patchDebtPayment, deleteDebtPayment } from "../api/debtPayments";
 import { useAuthToken } from "./useAuthToken";
+import { pushPendingDebts, refreshDebtToCache } from "../sync/debtsSync";
+import { pullDebtPaymentsToCache, pushPendingDebtPayments } from "../sync/debtPaymentsSync";
 
 export function useCachedDebtPayments(debtId, { limit = 200 } = {}) {
   const token = useAuthToken();
@@ -18,22 +17,33 @@ export function useCachedDebtPayments(debtId, { limit = 200 } = {}) {
   const items = useLiveQuery(async () => {
     if (!profileId || !debtId) return [];
     const list = await serverCacheDb.debtPayments.where("debtId").equals(debtId).toArray();
-    return list.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0));
+    return list
+      .filter((p) => !p.deletedAt)
+      .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0));
   }, [profileId, debtId]);
+
+  const doSync = useCallback(async () => {
+    if (!profileId || !debtId) return;
+
+    // важливо: спочатку пушимо pending debts, бо payment не може існувати без debt на сервері
+    await pushPendingDebts();
+    await pushPendingDebtPayments({ debtId });
+    await pullDebtPaymentsToCache(debtId, { limit });
+    await refreshDebtToCache(debtId);
+  }, [profileId, debtId, limit]);
 
   const refresh = useCallback(async () => {
     if (!profileId || !debtId) return;
     setLoading(true);
     setError(null);
     try {
-      await pullDebtPaymentsToCache(debtId, { limit });
-      await refreshDebtToCache(debtId);
+      await doSync();
     } catch (e) {
       setError(e);
     } finally {
       setLoading(false);
     }
-  }, [profileId, debtId, limit]);
+  }, [profileId, debtId, doSync]);
 
   useEffect(() => {
     (async () => {
@@ -47,62 +57,110 @@ export function useCachedDebtPayments(debtId, { limit = 200 } = {}) {
 
   const add = useCallback(
     async (input) => {
-      if (!debtId) return;
+      if (!profileId || !debtId) throw new Error("Missing profileId/debtId");
+
+      const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+
+      await serverCacheDb.debtPayments.put({
+        id,
+        profileId,
+        debtId,
+        amountCents: input.amountCents,
+        occurredAt: input.occurredAt,
+        note: input.note ?? null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        syncStatus: "created",
+      });
+
       setSyncing(true);
       setError(null);
       try {
-        const data = await createDebtPayment(debtId, input);
-        await serverCacheDb.debtPayments.put({ ...data.payment, profileId });
-        await refreshDebtToCache(debtId);
-        return data.payment;
+        await doSync();
       } catch (e) {
         setError(e);
-        throw e;
       } finally {
         setSyncing(false);
       }
+
+      return id;
     },
-    [profileId, debtId]
+    [profileId, debtId, doSync]
   );
 
   const update = useCallback(
     async (paymentId, patch) => {
-      if (!debtId) return;
+      if (!profileId || !debtId) throw new Error("Missing profileId/debtId");
+
+      const existing = await serverCacheDb.debtPayments.get(paymentId);
+      if (!existing || existing.profileId !== profileId || existing.debtId !== debtId) return;
+
+      await serverCacheDb.debtPayments.put({
+        ...existing,
+        ...patch,
+        updatedAt: new Date().toISOString(),
+        syncStatus: existing.syncStatus === "created" ? "created" : "updated",
+      });
+
       setSyncing(true);
       setError(null);
       try {
-        const data = await patchDebtPayment(debtId, paymentId, patch);
-        await serverCacheDb.debtPayments.put({ ...data.payment, profileId });
-        await refreshDebtToCache(debtId);
-        return data.payment;
+        await doSync();
       } catch (e) {
         setError(e);
-        throw e;
       } finally {
         setSyncing(false);
       }
     },
-    [profileId, debtId]
+    [profileId, debtId, doSync]
   );
 
   const remove = useCallback(
     async (paymentId) => {
-      if (!debtId) return;
+      if (!profileId || !debtId) throw new Error("Missing profileId/debtId");
+
+      const existing = await serverCacheDb.debtPayments.get(paymentId);
+      if (!existing || existing.profileId !== profileId || existing.debtId !== debtId) return;
+
+      if (existing.syncStatus === "created") {
+        await serverCacheDb.debtPayments.delete(paymentId);
+        return;
+      }
+
+      await serverCacheDb.debtPayments.put({
+        ...existing,
+        deletedAt: new Date().toISOString(),
+        syncStatus: "deleted",
+        updatedAt: new Date().toISOString(),
+      });
+
       setSyncing(true);
       setError(null);
       try {
-        await deleteDebtPayment(debtId, paymentId);
-        await serverCacheDb.debtPayments.delete(paymentId);
-        await refreshDebtToCache(debtId);
+        await doSync();
       } catch (e) {
         setError(e);
-        throw e;
       } finally {
         setSyncing(false);
       }
     },
-    [debtId]
+    [profileId, debtId, doSync]
   );
+
+  const sync = useCallback(async () => {
+    if (!profileId || !debtId) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      await doSync();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSyncing(false);
+    }
+  }, [profileId, debtId, doSync]);
 
   return {
     profileId,
@@ -111,6 +169,7 @@ export function useCachedDebtPayments(debtId, { limit = 200 } = {}) {
     syncing,
     error,
     refresh,
+    sync,
     add,
     update,
     remove,

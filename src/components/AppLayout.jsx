@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import { clearToken } from "../lib/authToken";
 import { useAuthToken } from "../hooks/useAuthToken";
 import { parseJwtPayload } from "../lib/jwtPayload";
+import { useAutoSync } from "../hooks/useAutoSync";
 
 function NavLink({ to, children }) {
   const loc = useLocation();
@@ -25,6 +26,8 @@ function NavLink({ to, children }) {
 }
 
 export default function AppLayout() {
+  useAutoSync();
+
   const token = useAuthToken();
   const email = parseJwtPayload(token)?.email ?? null;
   const profileId = parseJwtPayload(token)?.profileId ?? null;

@@ -5,6 +5,7 @@ import { sendJson, readJson, getBearerToken } from "../../../_lib/http";
 import { verifyToken } from "../../../_lib/jwt";
 
 const CreateBody = z.object({
+  id: z.string().uuid().optional(),
   amountCents: z.number().int().nonnegative(),
   occurredAt: z.string().min(1),
   note: z.string().max(500).optional().nullable(),
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
       const occurredAt = new Date(body.occurredAt);
       if (Number.isNaN(occurredAt.getTime())) return sendJson(res, 400, { ok: false, error: "Invalid occurredAt" });
 
-      const id = randomUUID();
+      const id = body.id ?? randomUUID();
 
       const { rows } = await sql`
         INSERT INTO debt_payments (id, profile_id, debt_id, amount_cents, occurred_at, note)
@@ -71,7 +72,11 @@ export default async function handler(req, res) {
 
       return sendJson(res, 200, { ok: true, payment: mapPayRow(rows[0]) });
     } catch (e) {
-      return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
+      const msg = String(e?.message ?? e);
+      if (msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique")) {
+        return sendJson(res, 409, { ok: false, error: "Payment id already exists" });
+      }
+      return sendJson(res, 400, { ok: false, error: msg });
     }
   }
 
