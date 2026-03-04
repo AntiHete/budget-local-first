@@ -5,6 +5,7 @@ import App from "./App.jsx";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
 import { ProfileProvider } from "./context/ProfileContext.jsx";
 import "./styles/globals.css";
+import { router } from "./router";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -15,5 +16,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         </BrowserRouter>
       </ProfileProvider>
     </ThemeProvider>
+    <RouterProvider router={router} />
   </React.StrictMode>
 );

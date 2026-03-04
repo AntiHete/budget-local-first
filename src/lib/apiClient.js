@@ -1,4 +1,4 @@
-import { getToken } from "./authToken";
+import { getToken, clearToken } from "./authToken";
 
 export async function apiRequest(path, options = {}) {
   const {
@@ -35,6 +35,9 @@ export async function apiRequest(path, options = {}) {
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      clearToken();
+    }
     const err = new Error(data?.error || `HTTP ${res.status}`);
     err.status = res.status;
     err.data = data;
