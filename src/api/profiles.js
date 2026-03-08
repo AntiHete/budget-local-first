@@ -11,3 +11,7 @@ export function createProfile(input) {
 export function selectProfile(profileId) {
   return apiRequest("/api/profiles/select", { method: "POST", body: { profileId } });
 }
+
+export function deleteProfile(profileId) {
+  return apiRequest(`/api/profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" });
+}

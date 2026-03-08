@@ -228,12 +228,10 @@ export default async function handler(req, res) {
     return sendJson(res, 404, { ok: false, error: "Not Found" });
   }
 
-  // GET /api/health
   if (segments[0] === "health") {
     return sendJson(res, 200, { ok: true, ts: new Date().toISOString() });
   }
 
-  // GET /api/me
   if (segments[0] === "me") {
     const payload = requireAuth(req, res);
     if (!payload) return;
@@ -256,21 +254,21 @@ export default async function handler(req, res) {
 
         const u = rows[0];
         const token = jwtSign({ sub: u.id, email: u.email });
-
         return sendJson(res, 200, { ok: true, token });
       } catch (e) {
         console.error("[auth/register] error:", e);
 
-    if (e?.code === "23505") {
-      return sendJson(res, 409, { ok: false, error: "Email already exists" });
-    }
+        if (e?.code === "23505") {
+          return sendJson(res, 409, { ok: false, error: "Email already exists" });
+        }
 
-    return sendJson(res, 500, {
-      ok: false,
-      error: String(e?.message ?? e),
-      code: e?.code ?? null,
-    });
-    }}
+        return sendJson(res, 500, {
+          ok: false,
+          error: String(e?.message ?? e),
+          code: e?.code ?? null,
+        });
+      }
+    }
 
     if (segments[1] === "login" && req.method === "POST") {
       try {
@@ -303,6 +301,40 @@ export default async function handler(req, res) {
     const payload = requireAuth(req, res);
     if (!payload) return;
 
+    // fallback: DELETE /api/profiles  body { profileId }
+    if (segments.length === 1 && req.method === "DELETE") {
+      const body = await readJson(req);
+      const profileId = body?.profileId;
+      if (!profileId) return sendJson(res, 400, { ok: false, error: "Missing profileId" });
+
+      const owned = await sql`
+        SELECT id
+        FROM profiles
+        WHERE id = ${profileId} AND user_id = ${payload.sub}
+        LIMIT 1
+      `;
+      if (!owned.rows[0]) return sendJson(res, 404, { ok: false, error: "Profile not found" });
+
+      await sql`DELETE FROM profiles WHERE id = ${profileId} AND user_id = ${payload.sub}`;
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // DELETE /api/profiles/:id
+    if (segments.length === 2 && req.method === "DELETE") {
+      const profileId = segments[1];
+
+      const owned = await sql`
+        SELECT id
+        FROM profiles
+        WHERE id = ${profileId} AND user_id = ${payload.sub}
+        LIMIT 1
+      `;
+      if (!owned.rows[0]) return sendJson(res, 404, { ok: false, error: "Profile not found" });
+
+      await sql`DELETE FROM profiles WHERE id = ${profileId} AND user_id = ${payload.sub}`;
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (segments.length === 1 && req.method === "GET") {
       const { rows } = await sql`
         SELECT id, name, created_at
@@ -310,7 +342,10 @@ export default async function handler(req, res) {
         WHERE user_id = ${payload.sub}
         ORDER BY created_at DESC
       `;
-      return sendJson(res, 200, { ok: true, profiles: rows.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at })) });
+      return sendJson(res, 200, {
+        ok: true,
+        profiles: rows.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at })),
+      });
     }
 
     if (segments.length === 1 && req.method === "POST") {
@@ -549,7 +584,6 @@ export default async function handler(req, res) {
     const profileId = requireProfile(payload, res);
     if (!profileId) return;
 
-    // /api/debts
     if (segments.length === 1) {
       if (req.method === "GET") {
         const status = url.searchParams.get("status");
@@ -635,7 +669,6 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { ok: false, error: "Method Not Allowed" });
     }
 
-    // /api/debts/:id
     const debtId = segments[1];
 
     if (segments.length === 2) {
@@ -703,7 +736,6 @@ export default async function handler(req, res) {
       return sendJson(res, 405, { ok: false, error: "Method Not Allowed" });
     }
 
-    // /api/debts/:id/payments
     if (segments[2] === "payments") {
       const exists = await sql`
         SELECT id
@@ -741,7 +773,6 @@ export default async function handler(req, res) {
             `;
 
             await refreshDebtStatus(profileId, debtId);
-
             return sendJson(res, 200, { ok: true, payment: mapPaymentRow(rows[0]) });
           } catch (e) {
             if (isPgUniqueViolation(e)) return sendJson(res, 409, { ok: false, error: "Payment id already exists" });
@@ -752,7 +783,6 @@ export default async function handler(req, res) {
         return sendJson(res, 405, { ok: false, error: "Method Not Allowed" });
       }
 
-      // /api/debts/:id/payments/:paymentId
       if (segments.length === 4) {
         const paymentId = segments[3];
 
@@ -780,7 +810,6 @@ export default async function handler(req, res) {
             if (!rows[0]) return sendJson(res, 404, { ok: false, error: "Not found" });
 
             await refreshDebtStatus(profileId, debtId);
-
             return sendJson(res, 200, { ok: true, payment: mapPaymentRow(rows[0]) });
           } catch (e) {
             return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
@@ -794,7 +823,6 @@ export default async function handler(req, res) {
           `;
 
           await refreshDebtStatus(profileId, debtId);
-
           return sendJson(res, 200, { ok: true });
         }
 
