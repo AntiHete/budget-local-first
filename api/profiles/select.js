@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { sql } from "../_lib/db";
-import { sendJson, readJson, getBearerToken } from "../_lib/http";
-import { verifyToken, signToken } from "../_lib/jwt";
+import { sql } from "../_lib/db.js";
+import { sendJson, readJson, getBearerToken } from "../_lib/http.js";
+import { verifyToken, signToken } from "../_lib/jwt.js";
 
 const Body = z.object({
   profileId: z.string().min(1),

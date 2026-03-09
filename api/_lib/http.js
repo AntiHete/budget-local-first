@@ -17,3 +17,4 @@ export function getBearerToken(req) {
   const m = h.match(/^Bearer\s+(.+)$/i);
   return m ? m[1] : null;
 }
+

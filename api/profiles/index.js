@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { sql } from "../_lib/db";
-import { sendJson, readJson, getBearerToken } from "../_lib/http";
-import { verifyToken } from "../_lib/jwt";
+import { sql } from "../_lib/db.js";
+import { sendJson, readJson, getBearerToken } from "../_lib/http.js";
+import { verifyToken } from "../_lib/jwt.js";
 
 const CreateBody = z.object({
   name: z.string().min(1).max(60),

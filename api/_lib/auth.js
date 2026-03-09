@@ -1,5 +1,5 @@
-import { sendJson, getBearerToken } from "./http";
-import { verifyToken } from "./jwt";
+import { sendJson, getBearerToken } from "./http.js";
+import { verifyToken } from "./jwt.js";
 
 /**
  * Returns { userId, email, profileId, payload } or null (and sends 401).
@@ -27,3 +27,4 @@ export async function requireUser(req, res) {
     return null;
   }
 }
+

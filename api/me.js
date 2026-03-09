@@ -1,5 +1,5 @@
-import { sendJson, getBearerToken } from "./_lib/http";
-import { verifyToken } from "./_lib/jwt";
+import { sendJson, getBearerToken } from "./_lib/http.js";
+import { verifyToken } from "./_lib/jwt.js";
 
 export default async function handler(req, res) {
   const token = getBearerToken(req);

@@ -20,3 +20,4 @@ export async function verifyToken(token) {
   const { payload } = await jwtVerify(token, secret);
   return payload;
 }
+

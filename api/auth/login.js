@@ -1,8 +1,8 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { sql } from "../_lib/db";
-import { readJson, sendJson } from "../_lib/http";
-import { signToken } from "../_lib/jwt";
+import { sql } from "../_lib/db.js";
+import { readJson, sendJson } from "../_lib/http.js";
+import { signToken } from "../_lib/jwt.js";
 
 const Body = z.object({
   email: z.string().email(),
@@ -57,3 +57,4 @@ export default async function handler(req, res) {
     return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
   }
 }
+
