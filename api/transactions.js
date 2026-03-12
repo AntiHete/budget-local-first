@@ -9,6 +9,7 @@ const Direction = z.enum(["income", "expense"]);
 
 const CreateBody = z.object({
   id: z.string().uuid().optional(),
+  accountId: z.string().uuid().nullable().optional(),
   direction: Direction,
   amountCents: z.number().int().nonnegative(),
   currency: z.string().trim().min(3).max(8).optional(),
@@ -19,6 +20,7 @@ const CreateBody = z.object({
 
 const PatchBody = z
   .object({
+    accountId: z.string().uuid().nullable().optional(),
     direction: Direction.optional(),
     amountCents: z.number().int().nonnegative().optional(),
     currency: z.string().trim().min(3).max(8).optional(),
@@ -81,13 +83,40 @@ async function handleList(req, res, profileId) {
   const limit = parseLimit(pickSingle(req.query?.limit));
   const before = parseOptionalDate(pickSingle(req.query?.before), "before");
   const after = parseOptionalDate(pickSingle(req.query?.after), "after");
+  const accountId = pickSingle(req.query?.accountId);
 
   let result;
 
-  if (before && after) {
+  if (accountId) {
+    await ensureAccountForProfile(profileId, accountId);
+  }
+
+  if (before && after && accountId) {
     result = await sql`
       SELECT
         id,
+        account_id,
+        direction,
+        amount_cents,
+        currency,
+        category,
+        note,
+        occurred_at,
+        created_at,
+        updated_at
+      FROM transactions
+      WHERE profile_id = ${profileId}
+        AND account_id = ${accountId}
+        AND occurred_at < ${before}
+        AND occurred_at > ${after}
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT ${limit}
+    `;
+  } else if (before && after) {
+    result = await sql`
+      SELECT
+        id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -100,6 +129,26 @@ async function handleList(req, res, profileId) {
       WHERE profile_id = ${profileId}
         AND occurred_at < ${before}
         AND occurred_at > ${after}
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT ${limit}
+    `;
+  } else if (before && accountId) {
+    result = await sql`
+      SELECT
+        id,
+        account_id,
+        direction,
+        amount_cents,
+        currency,
+        category,
+        note,
+        occurred_at,
+        created_at,
+        updated_at
+      FROM transactions
+      WHERE profile_id = ${profileId}
+        AND account_id = ${accountId}
+        AND occurred_at < ${before}
       ORDER BY occurred_at DESC, created_at DESC
       LIMIT ${limit}
     `;
@@ -107,6 +156,7 @@ async function handleList(req, res, profileId) {
     result = await sql`
       SELECT
         id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -121,10 +171,31 @@ async function handleList(req, res, profileId) {
       ORDER BY occurred_at DESC, created_at DESC
       LIMIT ${limit}
     `;
+  } else if (after && accountId) {
+    result = await sql`
+      SELECT
+        id,
+        account_id,
+        direction,
+        amount_cents,
+        currency,
+        category,
+        note,
+        occurred_at,
+        created_at,
+        updated_at
+      FROM transactions
+      WHERE profile_id = ${profileId}
+        AND account_id = ${accountId}
+        AND occurred_at > ${after}
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT ${limit}
+    `;
   } else if (after) {
     result = await sql`
       SELECT
         id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -139,10 +210,30 @@ async function handleList(req, res, profileId) {
       ORDER BY occurred_at DESC, created_at DESC
       LIMIT ${limit}
     `;
+  } else if (accountId) {
+    result = await sql`
+      SELECT
+        id,
+        account_id,
+        direction,
+        amount_cents,
+        currency,
+        category,
+        note,
+        occurred_at,
+        created_at,
+        updated_at
+      FROM transactions
+      WHERE profile_id = ${profileId}
+        AND account_id = ${accountId}
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT ${limit}
+    `;
   } else {
     result = await sql`
       SELECT
         id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -170,6 +261,7 @@ async function handleGetOne(res, profileId, rawId) {
   const { rows } = await sql`
     SELECT
       id,
+      account_id,
       direction,
       amount_cents,
       currency,
@@ -202,6 +294,7 @@ async function handleCreate(req, res, profileId) {
   const body = CreateBody.parse(await readJson(req));
 
   const id = body.id ?? randomUUID();
+  const accountId = await normalizeAccountId(profileId, body.accountId);
   const direction = body.direction;
   const amountCents = body.amountCents;
   const currency = normalizeCurrency(body.currency);
@@ -214,6 +307,7 @@ async function handleCreate(req, res, profileId) {
       INSERT INTO transactions (
         id,
         profile_id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -224,6 +318,7 @@ async function handleCreate(req, res, profileId) {
       VALUES (
         ${id},
         ${profileId},
+        ${accountId},
         ${direction},
         ${amountCents},
         ${currency},
@@ -233,6 +328,7 @@ async function handleCreate(req, res, profileId) {
       )
       RETURNING
         id,
+        account_id,
         direction,
         amount_cents,
         currency,
@@ -270,6 +366,11 @@ async function handlePatch(req, res, profileId, rawId) {
     });
   }
 
+  const nextAccountId =
+    patch.accountId !== undefined
+      ? await normalizeAccountId(profileId, patch.accountId)
+      : current.account_id ?? null;
+
   const nextDirection = patch.direction ?? current.direction;
   const nextAmountCents = patch.amountCents ?? Number(current.amount_cents);
   const nextCurrency = normalizeCurrency(patch.currency ?? current.currency);
@@ -289,6 +390,7 @@ async function handlePatch(req, res, profileId, rawId) {
   const { rows } = await sql`
     UPDATE transactions
     SET
+      account_id = ${nextAccountId},
       direction = ${nextDirection},
       amount_cents = ${nextAmountCents},
       currency = ${nextCurrency},
@@ -300,6 +402,7 @@ async function handlePatch(req, res, profileId, rawId) {
       AND profile_id = ${profileId}
     RETURNING
       id,
+      account_id,
       direction,
       amount_cents,
       currency,
@@ -343,6 +446,7 @@ async function findTransaction(profileId, id) {
   const { rows } = await sql`
     SELECT
       id,
+      account_id,
       direction,
       amount_cents,
       currency,
@@ -360,9 +464,34 @@ async function findTransaction(profileId, id) {
   return rows[0] ?? null;
 }
 
+async function normalizeAccountId(profileId, accountId) {
+  if (accountId == null) return null;
+  await ensureAccountForProfile(profileId, accountId);
+  return accountId;
+}
+
+async function ensureAccountForProfile(profileId, accountId) {
+  const id = ensureUuid(accountId, "accountId");
+
+  const { rows } = await sql`
+    SELECT id
+    FROM accounts
+    WHERE id = ${id}
+      AND profile_id = ${profileId}
+    LIMIT 1
+  `;
+
+  if (!rows[0]) {
+    throw new Error("Account not found for this profile");
+  }
+
+  return id;
+}
+
 function mapTransaction(row) {
   return {
     id: row.id,
+    accountId: row.account_id ?? null,
     direction: row.direction,
     amountCents: Number(row.amount_cents),
     currency: row.currency,
@@ -465,7 +594,8 @@ function handleError(res, error) {
   if (
     message.includes("limit must be an integer") ||
     message.includes("must be a valid UUID") ||
-    message.includes("must be a valid ISO date")
+    message.includes("must be a valid ISO date") ||
+    message.includes("Account not found")
   ) {
     return sendJson(res, 400, {
       ok: false,

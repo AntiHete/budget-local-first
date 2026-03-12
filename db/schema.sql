@@ -34,9 +34,41 @@ SELECT p.id, p.user_id, 'owner'
 FROM profiles p
 ON CONFLICT (profile_id, user_id) DO NOTHING;
 
+CREATE TABLE IF NOT EXISTS accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  kind text NOT NULL DEFAULT 'cash' CHECK (kind IN ('cash', 'card', 'bank', 'savings', 'other')),
+  currency text NOT NULL DEFAULT 'UAH',
+  opening_balance_cents integer NOT NULL DEFAULT 0 CHECK (opening_balance_cents >= 0),
+  is_default boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_profile ON accounts(profile_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_profile_default ON accounts(profile_id, is_default);
+
+INSERT INTO accounts (id, profile_id, name, kind, currency, opening_balance_cents, is_default)
+SELECT
+  gen_random_uuid(),
+  p.id,
+  'Основний рахунок',
+  'cash',
+  'UAH',
+  0,
+  true
+FROM profiles p
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM accounts a
+  WHERE a.profile_id = p.id
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  account_id uuid REFERENCES accounts(id) ON DELETE SET NULL,
   direction text NOT NULL CHECK (direction IN ('income','expense')),
   amount_cents integer NOT NULL CHECK (amount_cents >= 0),
   currency text NOT NULL DEFAULT 'UAH',
@@ -47,8 +79,21 @@ CREATE TABLE IF NOT EXISTS transactions (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE transactions
+ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id) ON DELETE SET NULL;
+
+UPDATE transactions t
+SET account_id = a.id
+FROM accounts a
+WHERE t.profile_id = a.profile_id
+  AND a.is_default = true
+  AND t.account_id IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_tx_profile_occurred
   ON transactions(profile_id, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_tx_profile_account
+  ON transactions(profile_id, account_id);
 
 CREATE TABLE IF NOT EXISTS budgets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

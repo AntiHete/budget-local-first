@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+
 import { db } from "../db/db";
 import { useProfile } from "../context/ProfileContext";
 import { todayISO } from "../services/dateService";
+import { ensureDefaultAccount } from "../services/accountLocalService";
 
 function fmtUAH(x) {
-  return new Intl.NumberFormat("uk-UA", { style: "currency", currency: "UAH" }).format(x ?? 0);
+  return new Intl.NumberFormat("uk-UA", {
+    style: "currency",
+    currency: "UAH",
+  }).format(x ?? 0);
 }
 
 function toNumOrNull(v) {
@@ -19,28 +24,53 @@ export default function TransactionsPage() {
   const [searchParams] = useSearchParams();
   const highlightId = Number(searchParams.get("highlight") || 0) || null;
 
-  // ---------- Add form ----------
   const [date, setDate] = useState(todayISO());
-  const [type, setType] = useState("expense"); // expense | income
+  const [type, setType] = useState("expense");
+  const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
 
-  // ---------- Filters ----------
   const [q, setQ] = useState("");
-  const [fType, setFType] = useState("all"); // all | expense | income
+  const [fType, setFType] = useState("all");
+  const [fAccountId, setFAccountId] = useState("");
   const [fCategoryId, setFCategoryId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
 
-  // ---------- Categories ----------
+  useEffect(() => {
+    if (!activeProfileId) return;
+    ensureDefaultAccount(activeProfileId).catch(console.error);
+  }, [activeProfileId]);
+
+  const accounts = useLiveQuery(async () => {
+    if (!activeProfileId) return [];
+    const items = await db.accounts.where("profileId").equals(activeProfileId).toArray();
+    items.sort((a, b) => {
+      if (a.isDefault && !b.isDefault) return -1;
+      if (!a.isDefault && b.isDefault) return 1;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+    return items;
+  }, [activeProfileId]);
+
   const categories = useLiveQuery(async () => {
     if (!activeProfileId) return [];
     const cats = await db.categories.where("profileId").equals(activeProfileId).toArray();
     cats.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     return cats;
+  }, [activeProfileId]);
+
+  const rawTx = useLiveQuery(async () => {
+    if (!activeProfileId) return [];
+    const txs = await db.transactions.where("profileId").equals(activeProfileId).toArray();
+    txs.sort(
+      (a, b) =>
+        (b.date || "").localeCompare(a.date || "") || (b.id ?? 0) - (a.id ?? 0)
+    );
+    return txs;
   }, [activeProfileId]);
 
   const categoriesByType = useMemo(() => {
@@ -58,7 +88,12 @@ export default function TransactionsPage() {
     return map;
   }, [categories]);
 
-  // Keep category selection valid when changing type
+  const accountNameById = useMemo(() => {
+    const map = new Map();
+    for (const a of accounts ?? []) map.set(a.id, a.name);
+    return map;
+  }, [accounts]);
+
   useEffect(() => {
     if (!categoryId) return;
     const id = Number(categoryId);
@@ -66,19 +101,22 @@ export default function TransactionsPage() {
     if (!cat || cat.type !== type) setCategoryId("");
   }, [type, categories, categoryId]);
 
-  // ---------- Transactions ----------
-  const rawTx = useLiveQuery(async () => {
-    if (!activeProfileId) return [];
-    const txs = await db.transactions.where("profileId").equals(activeProfileId).toArray();
-    // sort newest first
-    txs.sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.id ?? 0) - (a.id ?? 0));
-    return txs;
-  }, [activeProfileId]);
+  useEffect(() => {
+    if (!accounts?.length) {
+      setAccountId("");
+      return;
+    }
+
+    const exists = accounts.some((a) => String(a.id) === String(accountId));
+    if (!exists) {
+      const defaultAccount = accounts.find((a) => a.isDefault) ?? accounts[0];
+      setAccountId(String(defaultAccount.id));
+    }
+  }, [accounts, accountId]);
 
   const filteredTx = useMemo(() => {
     const list = rawTx ?? [];
     const qLower = q.trim().toLowerCase();
-
     const df = dateFrom || null;
     const dt = dateTo || null;
     const min = toNumOrNull(minAmount);
@@ -86,31 +124,39 @@ export default function TransactionsPage() {
 
     return list.filter((t) => {
       if (fType !== "all" && t.type !== fType) return false;
-
+      if (fAccountId && String(t.accountId ?? "") !== String(fAccountId)) return false;
       if (fCategoryId) {
         const cid = Number(fCategoryId);
         if ((t.categoryId ?? null) !== cid) return false;
       }
-
       if (df && (t.date || "") < df) return false;
       if (dt && (t.date || "") > dt) return false;
-
       if (min !== null && (t.amount ?? 0) < min) return false;
       if (max !== null && (t.amount ?? 0) > max) return false;
 
       if (qLower) {
-        const hay = `${t.note ?? ""} ${categoryNameById.get(t.categoryId) ?? ""}`.toLowerCase();
+        const hay = `${t.note ?? ""} ${categoryNameById.get(t.categoryId) ?? ""} ${accountNameById.get(t.accountId) ?? ""}`.toLowerCase();
         if (!hay.includes(qLower)) return false;
       }
 
       return true;
     });
-  }, [rawTx, q, fType, fCategoryId, dateFrom, dateTo, minAmount, maxAmount, categoryNameById]);
+  }, [
+    rawTx,
+    q,
+    fType,
+    fAccountId,
+    fCategoryId,
+    dateFrom,
+    dateTo,
+    minAmount,
+    maxAmount,
+    categoryNameById,
+    accountNameById,
+  ]);
 
-  // ---------- Highlight scroll ----------
   useEffect(() => {
     if (!highlightId) return;
-    // scroll after render
     const timer = setTimeout(() => {
       const el = document.getElementById(`tx-${highlightId}`);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -118,9 +164,9 @@ export default function TransactionsPage() {
     return () => clearTimeout(timer);
   }, [highlightId, filteredTx.length]);
 
-  // ---------- Actions ----------
   async function addTransaction() {
     if (!activeProfileId) return;
+    if (!accountId) return alert("Спочатку створи або обери рахунок");
 
     const num = Number(String(amount).replace(",", "."));
     if (!date) return alert("Вкажи дату");
@@ -130,6 +176,7 @@ export default function TransactionsPage() {
 
     await db.transactions.add({
       profileId: activeProfileId,
+      accountId: Number(accountId),
       date,
       type,
       categoryId: categoryId ? Number(categoryId) : null,
@@ -148,132 +195,144 @@ export default function TransactionsPage() {
     await db.transactions.delete(id);
   }
 
-  const totalIncome = useMemo(() => {
-    return (filteredTx ?? []).filter((t) => t.type === "income").reduce((s, t) => s + (t.amount ?? 0), 0);
-  }, [filteredTx]);
+  const totalIncome = useMemo(
+    () =>
+      (filteredTx ?? [])
+        .filter((t) => t.type === "income")
+        .reduce((s, t) => s + (t.amount ?? 0), 0),
+    [filteredTx]
+  );
 
-  const totalExpense = useMemo(() => {
-    return (filteredTx ?? []).filter((t) => t.type === "expense").reduce((s, t) => s + (t.amount ?? 0), 0);
-  }, [filteredTx]);
+  const totalExpense = useMemo(
+    () =>
+      (filteredTx ?? [])
+        .filter((t) => t.type === "expense")
+        .reduce((s, t) => s + (t.amount ?? 0), 0),
+    [filteredTx]
+  );
 
   return (
-    <>
-      <h1>Транзакції</h1>
+    <div style={{ display: "grid", gap: 20 }}>
+      <section className="card">
+        <h1>Транзакції</h1>
+      </section>
 
-      {/* Add */}
-      <div className="card">
+      <section className="card">
         <h2>Додати транзакцію</h2>
 
-        <div className="grid3">
-          <label className="labelCol">
-            Дата
-            <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        {!accounts?.length ? (
+          <p>
+            Немає рахунків. <Link to="/accounts">Створи рахунок</Link>.
+          </p>
+        ) : null}
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Дата</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
 
-          <label className="labelCol">
-            Тип
-            <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Тип</span>
+            <select value={type} onChange={(e) => setType(e.target.value)}>
               <option value="expense">Витрата</option>
               <option value="income">Дохід</option>
             </select>
           </label>
 
-          <label className="labelCol">
-            Категорія (опц.)
-            <select
-              className="select"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">— без категорії —</option>
-              {(categoriesByType[type] ?? []).map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Рахунок</span>
+            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">— обери рахунок —</option>
+              {(accounts ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} {a.isDefault ? "(основний)" : ""}
+                </option>
               ))}
             </select>
           </label>
 
-          <label className="labelCol">
-            Сума
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Категорія (опц.)</span>
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">— без категорії —</option>
+              {(categoriesByType[type] ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Сума</span>
             <input
-              className="input"
-              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value.replace(",", "."))}
               placeholder="Напр. 250"
             />
           </label>
 
-          <label className="labelCol" style={{ gridColumn: "span 2" }}>
-            Коментар (пошук теж по ньому)
-            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Напр. кава" />
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Коментар</span>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Напр. кава"
+            />
           </label>
 
-          <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button className="btn" type="button" onClick={addTransaction} disabled={!activeProfileId}>
-              Додати
-            </button>
+          <div>
+            <button onClick={addTransaction}>Додати</button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Filters */}
-      <div className="card">
+      <section className="card">
         <h2>Фільтри</h2>
 
-        <div className="grid3">
-          <label className="labelCol">
-            Пошук (категорія/коментар)
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Напр. продукти" />
-          </label>
+        <div style={{ display: "grid", gap: 12 }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Пошук: категорія / коментар / рахунок"
+          />
 
-          <label className="labelCol">
-            Тип
-            <select className="select" value={fType} onChange={(e) => setFType(e.target.value)}>
-              <option value="all">Усі</option>
-              <option value="expense">Витрати</option>
-              <option value="income">Доходи</option>
-            </select>
-          </label>
+          <select value={fType} onChange={(e) => setFType(e.target.value)}>
+            <option value="all">Усі</option>
+            <option value="expense">Витрати</option>
+            <option value="income">Доходи</option>
+          </select>
 
-          <label className="labelCol">
-            Категорія
-            <select className="select" value={fCategoryId} onChange={(e) => setFCategoryId(e.target.value)}>
-              <option value="">Усі</option>
-              {(categories ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.type === "expense" ? "Витрата" : "Дохід"} · {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <select value={fAccountId} onChange={(e) => setFAccountId(e.target.value)}>
+            <option value="">Усі рахунки</option>
+            {(accounts ?? []).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
 
-          <label className="labelCol">
-            Дата від
-            <input className="input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </label>
+          <select value={fCategoryId} onChange={(e) => setFCategoryId(e.target.value)}>
+            <option value="">Усі категорії</option>
+            {(categories ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.type === "expense" ? "Витрата" : "Дохід"} · {c.name}
+              </option>
+            ))}
+          </select>
 
-          <label className="labelCol">
-            Дата до
-            <input className="input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </label>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <input value={minAmount} onChange={(e) => setMinAmount(e.target.value.replace(",", "."))} placeholder="Мін. сума" />
+          <input value={maxAmount} onChange={(e) => setMaxAmount(e.target.value.replace(",", "."))} placeholder="Макс. сума" />
 
-          <label className="labelCol">
-            Мін. сума
-            <input className="input" inputMode="decimal" value={minAmount} onChange={(e) => setMinAmount(e.target.value.replace(",", "."))} />
-          </label>
-
-          <label className="labelCol">
-            Макс. сума
-            <input className="input" inputMode="decimal" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value.replace(",", "."))} />
-          </label>
-
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
-              className="btn"
-              type="button"
               onClick={() => {
                 setQ("");
                 setFType("all");
+                setFAccountId("");
                 setFCategoryId("");
                 setDateFrom("");
                 setDateTo("");
@@ -284,78 +343,51 @@ export default function TransactionsPage() {
               Скинути
             </button>
 
-            {highlightId && (
-              <span className="badge">highlight: {highlightId}</span>
-            )}
+            {highlightId ? <span>highlight: {highlightId}</span> : null}
           </div>
         </div>
 
-        <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 10 }}>
-          <span className="badge">Доходи: {fmtUAH(totalIncome)}</span>
-          <span className="badge">Витрати: {fmtUAH(totalExpense)}</span>
-          <span className="badge">Баланс: {fmtUAH(totalIncome - totalExpense)}</span>
-          <span className="muted">Показано: {(filteredTx ?? []).length}</span>
+        <div style={{ marginTop: 12 }}>
+          Доходи: {fmtUAH(totalIncome)} | Витрати: {fmtUAH(totalExpense)} | Баланс:{" "}
+          {fmtUAH(totalIncome - totalExpense)} | Показано: {filteredTx?.length ?? 0}
         </div>
-      </div>
+      </section>
 
-      {/* List */}
-      <div className="card">
+      <section className="card">
         <h2>Список</h2>
 
-        <div className="tableWrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Дата</th>
-                <th>Тип</th>
-                <th>Категорія</th>
-                <th>Сума</th>
-                <th>Коментар</th>
-                <th></th>
-              </tr>
-            </thead>
+        <div style={{ display: "grid", gap: 10 }}>
+          {(filteredTx ?? []).map((t) => {
+            const isHi = highlightId && t.id === highlightId;
 
-            <tbody>
-              {(filteredTx ?? []).map((t) => {
-                const isHi = highlightId && t.id === highlightId;
-                return (
-                  <tr
-                    key={t.id}
-                    id={`tx-${t.id}`}
-                    style={isHi ? { outline: "2px solid #f59e0b", outlineOffset: "-2px" } : undefined}
-                    title={isHi ? "Highlighted" : undefined}
-                  >
-                    <td>{t.date}</td>
-                    <td>
-                      <span className="badge">{t.type}</span>
-                    </td>
-                    <td>{t.categoryId ? (categoryNameById.get(t.categoryId) ?? "—") : "—"}</td>
-                    <td>{fmtUAH(t.amount)}</td>
-                    <td>{t.note ?? ""}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <button className="btn btnDanger" type="button" onClick={() => removeTransaction(t.id)}>
-                        Видалити
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+            return (
+              <div
+                id={`tx-${t.id}`}
+                key={t.id}
+                style={{
+                  border: isHi ? "2px solid #ffb300" : "1px solid #ddd",
+                  borderRadius: 8,
+                  padding: 12,
+                  background: isHi ? "rgba(255,179,0,0.08)" : "transparent",
+                }}
+              >
+                <div><strong>Дата:</strong> {t.date}</div>
+                <div><strong>Тип:</strong> {t.type}</div>
+                <div><strong>Рахунок:</strong> {accountNameById.get(t.accountId) ?? "—"}</div>
+                <div><strong>Категорія:</strong> {t.categoryId ? categoryNameById.get(t.categoryId) ?? "—" : "—"}</div>
+                <div><strong>Сума:</strong> {fmtUAH(t.amount)}</div>
+                <div><strong>Коментар:</strong> {t.note ?? ""}</div>
 
-              {(filteredTx ?? []).length === 0 && (
-                <tr>
-                  <td colSpan="6" className="muted" style={{ padding: 12 }}>
-                    Нема транзакцій за заданими фільтрами
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                <div style={{ marginTop: 10 }}>
+                  <button onClick={() => removeTransaction(t.id)}>Видалити</button>
+                </div>
+              </div>
+            );
+          })}
+
+          {!(filteredTx ?? []).length ? <div>Нема транзакцій за заданими фільтрами.</div> : null}
         </div>
-
-        <p className="muted" style={{ marginTop: 8 }}>
-          {/* Підсвітка: відкрий <code>/transactions?highlight=ID</code>. */}
-        </p>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
