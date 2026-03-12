@@ -1,55 +1,88 @@
 import { z } from "zod";
+
 import { sql } from "../_lib/db.js";
-import { sendJson, readJson, getBearerToken } from "../_lib/http.js";
-import { verifyToken, signToken } from "../_lib/jwt.js";
+import { requireUser } from "../_lib/auth.js";
+import { sendJson, readJson } from "../_lib/http.js";
+import { signToken } from "../_lib/jwt.js";
 
 const Body = z.object({
-  profileId: z.string().min(1),
+  profileId: z.string().uuid(),
 });
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Method Not Allowed" });
-
-  const token = getBearerToken(req);
-  if (!token) return sendJson(res, 401, { ok: false, error: "No token" });
-
-  let payload;
-  try {
-    payload = await verifyToken(token);
-  } catch {
-    return sendJson(res, 401, { ok: false, error: "Invalid token" });
+  if (req.method !== "POST") {
+    return sendJson(res, 405, {
+      ok: false,
+      error: "Method Not Allowed",
+    });
   }
 
-  const userId = payload?.sub;
-  if (!userId) return sendJson(res, 401, { ok: false, error: "Bad token payload" });
+  const auth = await requireUser(req, res);
+  if (!auth) return;
 
   try {
     const body = Body.parse(await readJson(req));
-    const profileId = body.profileId.trim();
 
     const { rows } = await sql`
-      SELECT id, name
-      FROM profiles
-      WHERE id = ${profileId} AND user_id = ${userId}
+      SELECT
+        p.id,
+        p.name,
+        pm.role
+      FROM profile_members pm
+      JOIN profiles p ON p.id = pm.profile_id
+      WHERE pm.profile_id = ${body.profileId}
+        AND pm.user_id = ${auth.userId}
       LIMIT 1
     `;
 
-    const p = rows[0];
-    if (!p) return sendJson(res, 404, { ok: false, error: "Profile not found" });
+    const profile = rows[0];
+    if (!profile) {
+      return sendJson(res, 404, {
+        ok: false,
+        error: "Profile not found",
+      });
+    }
 
     const newToken = await signToken({
-      sub: userId,
-      email: payload.email ?? null,
-      profileId: p.id,
+      sub: auth.userId,
+      email: auth.email ?? null,
+      profileId: profile.id,
     });
 
     return sendJson(res, 200, {
       ok: true,
       token: newToken,
-      selectedProfileId: p.id,
-      profile: { id: p.id, name: p.name },
+      selectedProfileId: profile.id,
+      profile: {
+        id: profile.id,
+        name: profile.name,
+        role: profile.role,
+      },
     });
-  } catch (e) {
-    return sendJson(res, 400, { ok: false, error: String(e?.message ?? e) });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "Validation failed",
+        details: error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+    }
+
+    if (error instanceof SyntaxError) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "Invalid JSON body",
+      });
+    }
+
+    console.error("profiles/select error:", error);
+
+    return sendJson(res, 500, {
+      ok: false,
+      error: "Internal Server Error",
+    });
   }
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { requireUser } from "./_lib/auth.js";
+import { requireProfileAccess } from "./_lib/rbac.js";
 import { sql } from "./_lib/db.js";
 import { readJson, sendJson } from "./_lib/http.js";
 
@@ -31,15 +31,9 @@ const PatchBody = z
   });
 
 export default async function handler(req, res) {
-  const auth = await requireUser(req, res);
+  const minRole = req.method === "GET" ? "viewer" : "editor";
+  const auth = await requireProfileAccess(req, res, minRole);
   if (!auth) return;
-
-  if (!auth.profileId) {
-    return sendJson(res, 400, {
-      ok: false,
-      error: "Active profile is required",
-    });
-  }
 
   const profileId = auth.profileId;
   const id = pickSingle(req.query?.id);

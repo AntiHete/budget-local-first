@@ -17,6 +17,23 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 CREATE INDEX IF NOT EXISTS idx_profiles_user ON profiles(user_id);
 
+CREATE TABLE IF NOT EXISTS profile_members (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (profile_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_members_profile ON profile_members(profile_id);
+CREATE INDEX IF NOT EXISTS idx_profile_members_user ON profile_members(user_id);
+
+INSERT INTO profile_members (profile_id, user_id, role)
+SELECT p.id, p.user_id, 'owner'
+FROM profiles p
+ON CONFLICT (profile_id, user_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS transactions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -30,7 +47,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_tx_profile_occurred ON transactions(profile_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tx_profile_occurred
+  ON transactions(profile_id, occurred_at DESC);
 
 CREATE TABLE IF NOT EXISTS budgets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -44,7 +62,8 @@ CREATE TABLE IF NOT EXISTS budgets (
   UNIQUE(profile_id, month, category)
 );
 
-CREATE INDEX IF NOT EXISTS idx_budgets_profile_month ON budgets(profile_id, month);
+CREATE INDEX IF NOT EXISTS idx_budgets_profile_month
+  ON budgets(profile_id, month);
 
 CREATE TABLE IF NOT EXISTS debts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,8 +81,11 @@ CREATE TABLE IF NOT EXISTS debts (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_debts_profile_status ON debts(profile_id, status);
-CREATE INDEX IF NOT EXISTS idx_debts_profile_started ON debts(profile_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_debts_profile_status
+  ON debts(profile_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_debts_profile_started
+  ON debts(profile_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS debt_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -75,5 +97,8 @@ CREATE TABLE IF NOT EXISTS debt_payments (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_payments_debt_occurred ON debt_payments(debt_id, occurred_at DESC);
-CREATE INDEX IF NOT EXISTS idx_payments_profile ON debt_payments(profile_id);
+CREATE INDEX IF NOT EXISTS idx_payments_debt_occurred
+  ON debt_payments(debt_id, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_payments_profile
+  ON debt_payments(profile_id);
