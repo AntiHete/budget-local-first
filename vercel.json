@@ -3,5 +3,11 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/api/transactions/:id",
+      "destination": "/api/transactions?id=:id"
+    }
+  ]
 }
