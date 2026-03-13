@@ -3,11 +3,17 @@ import Navbar from "./Navbar";
 
 export default function AppShell({ children }) {
   return (
-    <div className="app">
+    <div className="appRoot">
       <Navbar />
-      <main className="container main">{children}</main>
-      <footer className="footer">
-        <div className="container">Local-first • дані зберігаються в браузері</div>
+
+      <main className="pageMain">
+        <div className="pageContainer">{children}</div>
+      </main>
+
+      <footer className="appFooter">
+        <div className="pageContainer">
+          <span>Local-first • дані зберігаються в браузері</span>
+        </div>
       </footer>
     </div>
   );

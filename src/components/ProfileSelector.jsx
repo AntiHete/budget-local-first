@@ -1,73 +1,56 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { listProfiles, createProfile, selectProfile } from "../api/profiles";
-import { useAuthToken } from "../hooks/useAuthToken";
+
+import {
+  createProfile,
+  listProfiles,
+  selectProfile,
+} from "../api/profiles";
+import { setToken } from "../lib/authToken";
 import { parseJwtPayload } from "../lib/jwtPayload";
-import { setToken, clearToken } from "../lib/authToken";
+import { useAuthToken } from "../hooks/useAuthToken";
 
 export default function ProfileSelector() {
   const navigate = useNavigate();
   const token = useAuthToken();
 
-  const activeProfileId = useMemo(() => parseJwtPayload(token)?.profileId ?? "", [token]);
-  const isAuthed = !!token;
-
   const [profiles, setProfiles] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
+  const [newProfileName, setNewProfileName] = useState("");
   const [error, setError] = useState("");
 
-  const [newName, setNewName] = useState("");
+  const activeProfileId = useMemo(() => {
+    return parseJwtPayload(token)?.profileId ?? "";
+  }, [token]);
 
-  const refresh = async () => {
-    if (!isAuthed) return;
-    setLoading(true);
+  async function refreshProfiles() {
+    if (!token) {
+      setProfiles([]);
+      return;
+    }
+
     setError("");
     try {
       const data = await listProfiles();
-      setProfiles(data.profiles || []);
+      setProfiles(data?.profiles || []);
     } catch (e) {
       setError(String(e?.message ?? e));
-    } finally {
-      setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthed]);
+    refreshProfiles();
+  }, [token]);
 
-  const onSelect = async (profileId) => {
+  async function handleSelect(profileId) {
     if (!profileId) return;
+
     setWorking(true);
     setError("");
+
     try {
       const data = await selectProfile(profileId);
-      setToken(data.token);
-    } catch (e) {
-      setError(String(e?.message ?? e));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const onCreate = async () => {
-    const name = newName.trim();
-    if (!name) return;
-
-    setWorking(true);
-    setError("");
-    try {
-      const created = await createProfile({ name });
-      setNewName("");
-
-      // оновлюємо список і одразу робимо його активним
-      await refresh();
-
-      const createdId = created?.profile?.id;
-      if (createdId) {
-        const data = await selectProfile(createdId);
+      if (data?.token) {
         setToken(data.token);
       }
     } catch (e) {
@@ -75,65 +58,89 @@ export default function ProfileSelector() {
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onLogout = () => {
-    clearToken();
-    navigate("/login", { replace: true });
-  };
+  async function handleCreate() {
+    const name = newProfileName.trim();
+    if (!name) return;
 
-  if (!isAuthed) return null;
+    setWorking(true);
+    setError("");
+
+    try {
+      const created = await createProfile({ name });
+      const createdId = created?.profile?.id;
+
+      setNewProfileName("");
+      await refreshProfiles();
+
+      if (createdId) {
+        const selected = await selectProfile(createdId);
+        if (selected?.token) {
+          setToken(selected.token);
+        }
+      }
+    } catch (e) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  if (!token) return null;
 
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <span style={{ opacity: 0.9 }}>Профіль:</span>
-
+    <div className="profileBar">
+      <div className="profileBarGroup">
+        <label className="profileBarLabel">Профіль</label>
         <select
+          className="profileBarSelect"
           value={activeProfileId}
-          onChange={(e) => onSelect(e.target.value)}
-          disabled={loading || working}
-          style={{ minWidth: 200 }}
+          onChange={(e) => handleSelect(e.target.value)}
+          disabled={working}
         >
           <option value="">— обери профіль —</option>
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
+          {profiles.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {profile.name}
+              {profile.role ? ` (${profile.role})` : ""}
             </option>
           ))}
         </select>
+      </div>
 
-        <button onClick={refresh} disabled={loading || working}>
-          {loading ? "..." : "Оновити"}
+      <div className="profileBarActions">
+        <button type="button" onClick={refreshProfiles} disabled={working}>
+          Оновити
         </button>
 
-        <button onClick={() => navigate("/profiles")} disabled={working}>
+        <button type="button" onClick={() => navigate("/profiles")}>
           Profiles
         </button>
 
-        <button onClick={onLogout} disabled={working}>
+        <button type="button" onClick={() => navigate("/logout")}>
           Logout
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div className="profileBarCreate">
         <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
+          className="profileBarInput"
+          value={newProfileName}
+          onChange={(e) => setNewProfileName(e.target.value)}
           placeholder="Новий профіль (назва)"
           disabled={working}
-          style={{ minWidth: 220 }}
         />
-        <button onClick={onCreate} disabled={working || !newName.trim()}>
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={working || !newProfileName.trim()}
+        >
           Додати
         </button>
       </div>
 
-      {error ? (
-        <div style={{ color: "crimson", width: "100%" }}>
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="profileBarError">{error}</div> : null}
     </div>
   );
 }
