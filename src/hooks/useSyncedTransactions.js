@@ -1,161 +1,173 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { serverCacheDb } from "../db/serverCacheDb";
-import { parseJwtPayload } from "../lib/jwtPayload";
-import { pullTransactionsToCache, pushPendingTransactions } from "../sync/transactionsSync";
-import { useAuthToken } from "./useAuthToken";
 
-export function useSyncedTransactions({ limit = 200 } = {}) {
-  const token = useAuthToken();
-  const profileId = useMemo(() => parseJwtPayload(token)?.profileId ?? null, [token]);
+import {
+  createTransaction,
+  deleteTransaction,
+  listTransactions,
+  updateTransaction,
+} from "../api/transactions";
 
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState(null);
+function sortTransactions(items) {
+  return [...items].sort((a, b) => {
+    const aTime = new Date(a.occurredAt || a.date || 0).getTime();
+    const bTime = new Date(b.occurredAt || b.date || 0).getTime();
+    return bTime - aTime;
+  });
+}
 
-  const items = useLiveQuery(async () => {
-    if (!profileId) return [];
-    const list = await serverCacheDb.transactions
-      .where("[profileId+occurredAt]")
-      .between([profileId, DexieMin], [profileId, DexieMax])
-      .toArray();
-
-    return list
-      .filter((t) => !t.deletedAt)
-      .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : a.occurredAt > b.occurredAt ? -1 : 0));
-  }, [profileId]);
-
-  const refresh = useCallback(async () => {
-    if (!profileId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await pullTransactionsToCache({ limit });
-    } catch (e) {
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [profileId, limit]);
-
-  const sync = useCallback(async () => {
-    if (!profileId) return;
-    setSyncing(true);
-    setError(null);
-    try {
-      await pushPendingTransactions();
-      await pullTransactionsToCache({ limit });
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSyncing(false);
-    }
-  }, [profileId, limit]);
-
-  useEffect(() => {
-    (async () => {
-      if (!profileId) {
-        setLoading(false);
-        return;
-      }
-      await refresh();
-      try {
-        await sync();
-      } catch {}
-    })();
-  }, [profileId, refresh, sync]);
-
-  const add = useCallback(
-    async (tx) => {
-      if (!profileId) throw new Error("No active profileId");
-
-      const now = new Date().toISOString();
-      const id = tx.id ?? crypto.randomUUID();
-
-      const local = {
-        id,
-        profileId,
-        direction: tx.direction,
-        amountCents: tx.amountCents,
-        currency: tx.currency ?? "UAH",
-        category: tx.category ?? null,
-        note: tx.note ?? null,
-        occurredAt: tx.occurredAt,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-        syncStatus: "created",
-      };
-
-      await serverCacheDb.transactions.put(local);
-
-      try {
-        await sync();
-      } catch {}
-
-      return id;
-    },
-    [profileId, sync]
-  );
-
-  const update = useCallback(
-    async (id, patch) => {
-      if (!profileId) throw new Error("No active profileId");
-
-      const existing = await serverCacheDb.transactions.get(id);
-      if (!existing || existing.profileId !== profileId) return;
-
-      const updated = {
-        ...existing,
-        ...patch,
-        updatedAt: new Date().toISOString(),
-        syncStatus: existing.syncStatus === "created" ? "created" : "updated",
-      };
-
-      await serverCacheDb.transactions.put(updated);
-
-      try {
-        await sync();
-      } catch {}
-    },
-    [profileId, sync]
-  );
-
-  const remove = useCallback(
-    async (id) => {
-      if (!profileId) throw new Error("No active profileId");
-
-      const existing = await serverCacheDb.transactions.get(id);
-      if (!existing || existing.profileId !== profileId) return;
-
-      const updated = {
-        ...existing,
-        deletedAt: new Date().toISOString(),
-        syncStatus: "deleted",
-      };
-
-      await serverCacheDb.transactions.put(updated);
-
-      try {
-        await sync();
-      } catch {}
-    },
-    [profileId, sync]
-  );
-
+function normalizeTransaction(tx) {
   return {
-    profileId,
-    items: items ?? [],
-    loading,
-    syncing,
-    error,
-    refresh,
-    sync,
-    add,
-    update,
-    remove,
+    id: tx.id,
+    accountId: tx.accountId ?? null,
+    type: tx.direction,
+    direction: tx.direction,
+    amount: Number(tx.amountCents ?? 0) / 100,
+    amountCents: Number(tx.amountCents ?? 0),
+    currency: tx.currency ?? "UAH",
+    category: tx.category ?? "",
+    note: tx.note ?? "",
+    occurredAt: tx.occurredAt,
+    date: String(tx.occurredAt ?? "").slice(0, 10),
+    createdAt: tx.createdAt ?? null,
+    updatedAt: tx.updatedAt ?? null,
   };
 }
 
-const DexieMin = "";
-const DexieMax = "\uffff";
+function toServerPayload(input, { partial = false } = {}) {
+  const payload = {};
+
+  if (!partial || input.accountId !== undefined) {
+    payload.accountId = input.accountId || null;
+  }
+
+  if (!partial || input.type !== undefined) {
+    payload.direction = input.type;
+  }
+
+  if (!partial || input.amount !== undefined) {
+    payload.amountCents = Math.round(Number(input.amount || 0) * 100);
+  }
+
+  if (!partial || input.currency !== undefined) {
+    payload.currency = (input.currency || "UAH").trim().toUpperCase();
+  }
+
+  if (!partial || input.category !== undefined) {
+    payload.category = (input.category || "").trim() || null;
+  }
+
+  if (!partial || input.note !== undefined) {
+    payload.note = (input.note || "").trim() || null;
+  }
+
+  if (!partial || input.date !== undefined) {
+    payload.occurredAt = input.date
+      ? new Date(`${input.date}T12:00:00`).toISOString()
+      : new Date().toISOString();
+  }
+
+  return payload;
+}
+
+export function useSyncedTransactions({ activeProfileId }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const reload = useCallback(async () => {
+    if (!activeProfileId) {
+      setItems([]);
+      return [];
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await listTransactions();
+      const next = sortTransactions(
+        (data.transactions || []).map(normalizeTransaction)
+      );
+      setItems(next);
+      return next;
+    } catch (e) {
+      setError(String(e?.message ?? e));
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [activeProfileId]);
+
+  useEffect(() => {
+    reload().catch(() => {});
+  }, [reload]);
+
+  const createTx = useCallback(async (input) => {
+    setSaving(true);
+    setError("");
+
+    try {
+      const data = await createTransaction(toServerPayload(input));
+      const nextTx = normalizeTransaction(data.transaction);
+      setItems((prev) => sortTransactions([nextTx, ...prev]));
+      return nextTx;
+    } catch (e) {
+      setError(String(e?.message ?? e));
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const updateTx = useCallback(async (id, patch) => {
+    setSaving(true);
+    setError("");
+
+    try {
+      const data = await updateTransaction(id, toServerPayload(patch, { partial: true }));
+      const nextTx = normalizeTransaction(data.transaction);
+
+      setItems((prev) =>
+        sortTransactions(prev.map((item) => (item.id === id ? nextTx : item)))
+      );
+
+      return nextTx;
+    } catch (e) {
+      setError(String(e?.message ?? e));
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const removeTx = useCallback(async (id) => {
+    setSaving(true);
+    setError("");
+
+    try {
+      await deleteTransaction(id);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    } catch (e) {
+      setError(String(e?.message ?? e));
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  return useMemo(
+    () => ({
+      items,
+      loading,
+      saving,
+      error,
+      reload,
+      createTx,
+      updateTx,
+      removeTx,
+    }),
+    [items, loading, saving, error, reload, createTx, updateTx, removeTx]
+  );
+}
+

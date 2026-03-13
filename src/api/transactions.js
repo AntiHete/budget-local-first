@@ -1,27 +1,41 @@
 import { apiRequest } from "../lib/apiClient";
 
-export function listTransactions(params = {}) {
-  const qs = new URLSearchParams();
-  if (params.limit != null) qs.set("limit", String(params.limit));
-  if (params.before) qs.set("before", params.before);
-  if (params.after) qs.set("after", params.after);
+function buildQuery(params = {}) {
+  const search = new URLSearchParams();
 
-  const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return apiRequest(`/api/transactions${suffix}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    search.set(key, String(value));
+  }
+
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
 }
 
-export function createTransaction(input) {
-  return apiRequest("/api/transactions", { method: "POST", body: input });
+export function listTransactions(params = {}) {
+  return apiRequest(`/api/transactions${buildQuery(params)}`);
 }
 
 export function getTransaction(id) {
-  return apiRequest(`/api/transactions/${encodeURIComponent(id)}`);
+  return apiRequest(`/api/transactions/${id}`);
 }
 
-export function patchTransaction(id, patch) {
-  return apiRequest(`/api/transactions/${encodeURIComponent(id)}`, { method: "PATCH", body: patch });
+export function createTransaction(input) {
+  return apiRequest("/api/transactions", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function updateTransaction(id, input) {
+  return apiRequest(`/api/transactions/${id}`, {
+    method: "PATCH",
+    body: input,
+  });
 }
 
 export function deleteTransaction(id) {
-  return apiRequest(`/api/transactions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return apiRequest(`/api/transactions/${id}`, {
+    method: "DELETE",
+  });
 }
