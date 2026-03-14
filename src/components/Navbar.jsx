@@ -14,7 +14,6 @@ export default function Navbar() {
         <div className="navTopRow">
           <div className="brandBlock">
             <div className="brandTitle">Budget</div>
-            <div className="brandSubtitle">budget-local-first</div>
           </div>
 
           <nav className="navList">
