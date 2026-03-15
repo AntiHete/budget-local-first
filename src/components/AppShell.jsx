@@ -12,7 +12,9 @@ export default function AppShell({ children }) {
 
       <footer className="appFooter">
         <div className="pageContainer">
-          <span>Local-first • дані зберігаються в браузері</span>
+          <span>
+            Budget — локально-перша система керування фінансами з серверною синхронізацією транзакцій
+          </span>
         </div>
       </footer>
     </div>

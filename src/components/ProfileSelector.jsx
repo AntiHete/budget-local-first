@@ -92,7 +92,7 @@ export default function ProfileSelector() {
   return (
     <div className="profileBar">
       <div className="profileBarGroup">
-        <label className="profileBarLabel">Профіль</label>
+        <label className="profileBarLabel">Активний профіль</label>
         <select
           className="profileBarSelect"
           value={activeProfileId}
@@ -115,29 +115,32 @@ export default function ProfileSelector() {
         </button>
 
         <button type="button" onClick={() => navigate("/profiles")}>
-          Profiles
+          Керування профілями
         </button>
 
         <button type="button" onClick={() => navigate("/logout")}>
-          Logout
+          Вийти
         </button>
       </div>
 
       <div className="profileBarCreate">
-        <input
-          className="profileBarInput"
-          value={newProfileName}
-          onChange={(e) => setNewProfileName(e.target.value)}
-          placeholder="Новий профіль (назва)"
-          disabled={working}
-        />
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={working || !newProfileName.trim()}
-        >
-          Додати
-        </button>
+        <label className="profileBarLabel">Новий профіль</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            className="profileBarInput"
+            value={newProfileName}
+            onChange={(e) => setNewProfileName(e.target.value)}
+            placeholder="Назва профілю"
+            disabled={working}
+          />
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={working || !newProfileName.trim()}
+          >
+            Додати
+          </button>
+        </div>
       </div>
 
       {error ? <div className="profileBarError">{error}</div> : null}

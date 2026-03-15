@@ -39,10 +39,10 @@ export default function Navbar() {
               Прогноз
             </NavLink>
             <NavLink to="/backup" className={linkClass}>
-              Backup
+              Резервна копія
             </NavLink>
             <NavLink to="/profiles" className={linkClass}>
-              Profiles
+              Профілі
             </NavLink>
             <NavLink to="/settings" className={linkClass}>
               Налаштування
