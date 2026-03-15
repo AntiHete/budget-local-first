@@ -1,16 +1,136 @@
-# React + Vite
+# Budget Local First
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Вебзастосунок для керування особистими фінансами з підходом **local-first** та серверною синхронізацією ключових даних.
 
-Currently, two official plugins are available:
+Проєкт розроблено як дипломну роботу. Система дозволяє вести облік доходів і витрат, працювати з рахунками, бюджетами, боргами, профілями доступу та резервними копіями даних.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+---
 
-## React Compiler
+## Основні можливості
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 1. Обліковий запис користувача
+- реєстрація
+- вхід у систему
+- JWT-автентифікація
+- перегляд і редагування профілю
+- зміна пароля
 
-## Expanding the ESLint configuration
+### 2. Профілі та контроль доступу
+- створення кількох профілів
+- перемикання активного профілю
+- додавання учасників у профіль
+- ролі доступу:
+  - `owner`
+  - `editor`
+  - `viewer`
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 3. Транзакції
+- створення транзакцій
+- перегляд списку транзакцій
+- редагування транзакцій
+- видалення транзакцій
+- фільтрація
+- прив’язка транзакції до рахунку
+- серверний CRUD через `/api/transactions`
+
+### 4. Рахунки / гаманці
+- створення рахунків
+- основний рахунок профілю
+- типи рахунків:
+  - cash
+  - card
+  - bank
+  - savings
+  - other
+
+### 5. Бюджети
+- встановлення місячних лімітів по категоріях
+- порівняння плану і фактичних витрат
+- попередження про наближення до ліміту або перевищення
+
+### 6. Аналітика та прогноз
+- зведення по доходах і витратах
+- структура витрат за категоріями
+- денна аналітика по місяцю
+- прогноз на майбутній період на основі історичних даних
+
+### 7. Борги та платежі
+- облік боргів
+- облік платежів по боргах
+- планові платежі / нагадування
+
+### 8. Backup / Restore
+- експорт JSON backup
+- імпорт backup
+- режими імпорту:
+  - як новий профіль
+  - merge в активний профіль
+  - replace активного профілю
+
+---
+
+## Архітектура
+
+Проєкт поєднує **local-first підхід** і **клієнт-серверну архітектуру**.
+
+### Клієнтська частина
+- React
+- Vite
+- React Router
+- Dexie (IndexedDB у браузері)
+
+### Серверна частина
+- Vercel Functions (`/api/*`)
+- PostgreSQL
+- JWT для захищених маршрутів
+
+### Як розподілені дані
+**Через серверний API працюють:**
+- автентифікація
+- профілі
+- учасники і ролі доступу
+- рахунки
+- транзакції
+- дані користувача (`/api/me`)
+- зміна пароля
+
+**Локально в браузері зберігаються:**
+- категорії
+- бюджети
+- планові платежі
+- backup/import/export допоміжні дані
+- частина local-first сценаріїв
+
+Таким чином система демонструє і локальну автономну роботу, і серверну взаємодію.
+
+---
+
+## Технології
+
+- React
+- Vite
+- React Router
+- Dexie
+- Vercel
+- PostgreSQL
+- JWT
+- Zod
+- bcryptjs
+
+---
+
+## Структура проєкту
+
+```text
+api/                # серверні маршрути Vercel
+api/_lib/           # helper-модулі для auth/db/http/jwt/rbac
+db/                 # SQL-схема бази даних
+scripts/            # допоміжні скрипти, smoke tests
+src/
+  api/              # клієнтські обгортки для API
+  components/       # UI-компоненти
+  context/          # React context
+  db/               # локальна Dexie-база
+  hooks/            # кастомні React hooks
+  pages/            # сторінки застосунку
+  services/         # local-first та backup логіка
