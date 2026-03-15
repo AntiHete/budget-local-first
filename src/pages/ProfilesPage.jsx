@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -21,32 +21,33 @@ const ROLE_OPTIONS = ["owner", "editor", "viewer"];
 export default function ProfilesPage() {
   const navigate = useNavigate();
   const token = useAuthToken();
-  const activeProfileId = useMemo(
-    () => parseJwtPayload(token)?.profileId ?? null,
-    [token]
-  );
 
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [profiles, setProfiles] = useState([]);
   const [members, setMembers] = useState([]);
 
-  const [name, setName] = useState("");
+  const [newProfileName, setNewProfileName] = useState("");
   const [renameDrafts, setRenameDrafts] = useState({});
-
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState("viewer");
 
-  const activeProfile = useMemo(
-    () => profiles.find((p) => p.id === activeProfileId) ?? null,
-    [profiles, activeProfileId]
-  );
+  const activeProfileId = useMemo(() => {
+    return parseJwtPayload(token)?.profileId ?? "";
+  }, [token]);
 
-  const refreshProfiles = async () => {
+  const activeProfile = useMemo(() => {
+    return profiles.find((profile) => profile.id === activeProfileId) ?? null;
+  }, [profiles, activeProfileId]);
+
+  const isOwner = activeProfile?.role === "owner";
+
+  async function refreshProfiles() {
     const data = await listProfiles();
-    const nextProfiles = data.profiles || [];
+    const nextProfiles = data?.profiles || [];
     setProfiles(nextProfiles);
 
     setRenameDrafts((prev) => {
@@ -58,96 +59,124 @@ export default function ProfilesPage() {
       }
       return next;
     });
-  };
 
-  const refreshMembers = async () => {
+    return nextProfiles;
+  }
+
+  async function refreshMembers() {
     if (!activeProfileId) {
       setMembers([]);
-      return;
+      return [];
     }
-    const data = await listProfileMembers();
-    setMembers(data.members || []);
-  };
 
-  const refreshAll = async () => {
+    const data = await listProfileMembers();
+    const nextMembers = data?.members || [];
+    setMembers(nextMembers);
+    return nextMembers;
+  }
+
+  async function refreshAll() {
     setLoading(true);
-    setError(null);
+    setError("");
+
     try {
       await refreshProfiles();
       await refreshMembers();
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
     refreshAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProfileId]);
 
-  const onCreate = async () => {
-    if (!name.trim()) return;
+  async function handleCreateProfile(e) {
+    e.preventDefault();
+
+    const name = newProfileName.trim();
+    if (!name) return;
+
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
-      const data = await createProfile({ name: name.trim() });
-      setName("");
+      const created = await createProfile({ name });
+      const createdId = created?.profile?.id;
+
+      setNewProfileName("");
       await refreshProfiles();
 
-      const createdId = data?.profile?.id;
       if (createdId) {
         const selected = await selectProfile(createdId);
+        if (selected?.token) {
+          setToken(selected.token);
+        }
+      }
+
+      setSuccess("Профіль створено");
+    } catch (e) {
+      setError(String(e?.message ?? e));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleSelectProfile(profileId) {
+    if (!profileId) return;
+
+    setWorking(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const selected = await selectProfile(profileId);
+      if (selected?.token) {
         setToken(selected.token);
       }
+      setSuccess("Профіль перемкнено");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onSelect = async (profileId) => {
-    setWorking(true);
-    setError(null);
-    try {
-      const data = await selectProfile(profileId);
-      setToken(data.token);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const onRename = async (profileId) => {
-    const nextName = (renameDrafts[profileId] || "").trim();
+  async function handleRenameProfile(profileId) {
+    const nextName = String(renameDrafts[profileId] || "").trim();
     if (!nextName) return;
 
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
       await renameProfile(profileId, nextName);
       await refreshProfiles();
+      setSuccess("Назву профілю оновлено");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onDelete = async (profileId) => {
+  async function handleDeleteProfile(profileId) {
     const isActive = profileId === activeProfileId;
     const ok = window.confirm(
       isActive
-        ? "Видалити активний профіль? Це також видалить усі пов’язані дані та розлогінить тебе."
-        : "Видалити профіль? Це також видалить усі пов’язані дані."
+        ? "Видалити активний профіль? Після цього тебе буде розлогінено."
+        : "Видалити профіль?"
     );
     if (!ok) return;
 
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
       await deleteProfile(profileId);
 
@@ -158,231 +187,328 @@ export default function ProfilesPage() {
       }
 
       await refreshAll();
+      setSuccess("Профіль видалено");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onAddMember = async () => {
-    if (!memberEmail.trim()) return;
+  async function handleAddMember(e) {
+    e.preventDefault();
+
+    const email = memberEmail.trim();
+    if (!email) return;
 
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
-      await addProfileMember(memberEmail.trim(), memberRole);
+      await addProfileMember(email, memberRole);
       setMemberEmail("");
       setMemberRole("viewer");
       await refreshMembers();
+      setSuccess("Учасника додано");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onChangeMemberRole = async (memberId, role) => {
+  async function handleChangeMemberRole(memberId, role) {
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
       await updateProfileMemberRole(memberId, role);
       await refreshMembers();
+      setSuccess("Роль учасника оновлено");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
-  const onRemoveMember = async (memberId) => {
+  async function handleRemoveMember(memberId) {
     const ok = window.confirm("Видалити учасника з профілю?");
     if (!ok) return;
 
     setWorking(true);
-    setError(null);
+    setError("");
+    setSuccess("");
+
     try {
-      const data = await removeProfileMember(memberId);
-      if (data?.removedCurrentUser) {
+      const result = await removeProfileMember(memberId);
+
+      if (result?.removedCurrentUser) {
         clearToken();
-        navigate("/profiles", { replace: true });
+        navigate("/login", { replace: true });
         return;
       }
+
       await refreshMembers();
+      setSuccess("Учасника видалено");
     } catch (e) {
-      setError(e);
+      setError(String(e?.message ?? e));
     } finally {
       setWorking(false);
     }
-  };
+  }
 
   return (
-    <div style={{ padding: 16 }}>
-      <h2>Profiles</h2>
+    <div style={{ display: "grid", gap: 20 }}>
+      <section className="card">
+        <h1>Профілі та доступ</h1>
+        <p>
+          Тут можна створювати профілі, перемикати активний профіль, додавати
+          учасників і керувати ролями доступу.
+        </p>
+      </section>
 
-      <p>
-        Active profileId: <code>{activeProfileId ?? "—"}</code>
-      </p>
+      <section className="statsGrid">
+        <article className="statCard">
+          <div className="statLabel">Усього профілів</div>
+          <div className="statValue">{profiles.length}</div>
+        </article>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New profile name"
-          disabled={working}
-        />
-        <button onClick={onCreate} disabled={working || !name.trim()}>
-          Create
-        </button>
-        <button onClick={refreshAll} disabled={working}>
-          Refresh
-        </button>
-      </div>
+        <article className="statCard">
+          <div className="statLabel">Активний профіль</div>
+          <div className="statValue">{activeProfile?.name || "—"}</div>
+        </article>
 
-      {error ? (
-        <div style={{ color: "crimson", marginBottom: 12 }}>
-          {String(error?.message ?? error)}
-        </div>
-      ) : null}
+        <article className="statCard">
+          <div className="statLabel">Моя роль</div>
+          <div className="statValue">{activeProfile?.role || "—"}</div>
+        </article>
 
-      <div style={{ marginBottom: 16 }}>
-        {loading ? "Loading…" : `Count: ${profiles.length}`}{" "}
-        {working ? "| Working…" : ""}
-      </div>
+        <article className="statCard">
+          <div className="statLabel">Учасників в активному профілі</div>
+          <div className="statValue">{members.length}</div>
+        </article>
+      </section>
 
-      <div style={{ display: "grid", gap: 12, marginBottom: 24 }}>
-        {profiles.map((p) => {
-          const isActive = p.id === activeProfileId;
-          return (
-            <div
-              key={p.id}
-              style={{
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>
-                {p.name} {isActive ? "(active)" : ""}
-              </div>
-              <div>
-                <code>{p.id}</code>
-              </div>
-              <div>Role: {p.role}</div>
+      <section className="card">
+        <h2>Створити профіль</h2>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <input
-                  value={renameDrafts[p.id] ?? ""}
-                  onChange={(e) =>
-                    setRenameDrafts((prev) => ({
-                      ...prev,
-                      [p.id]: e.target.value,
-                    }))
-                  }
-                  disabled={working}
-                  placeholder="Rename profile"
-                />
-                <button onClick={() => onRename(p.id)} disabled={working}>
-                  Rename
-                </button>
-                <button
-                  onClick={() => onSelect(p.id)}
-                  disabled={working || isActive}
-                >
-                  Select
-                </button>
-                <button
-                  onClick={() => onDelete(p.id)}
-                  disabled={working}
-                  style={{ border: "1px solid #f4433633" }}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <hr />
-
-      <h3 style={{ marginTop: 24 }}>
-        Members {activeProfile ? `— ${activeProfile.name}` : ""}
-      </h3>
-
-      {!activeProfileId ? (
-        <p>Select a profile first.</p>
-      ) : (
-        <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <form onSubmit={handleCreateProfile} className="formGrid twoCols">
+          <label className="field">
+            <span>Назва нового профілю</span>
             <input
-              value={memberEmail}
-              onChange={(e) => setMemberEmail(e.target.value)}
-              placeholder="User email"
+              value={newProfileName}
+              onChange={(e) => setNewProfileName(e.target.value)}
+              placeholder="Напр. Сімейний бюджет"
               disabled={working}
             />
-            <select
-              value={memberRole}
-              onChange={(e) => setMemberRole(e.target.value)}
-              disabled={working}
-            >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={onAddMember}
-              disabled={working || !memberEmail.trim()}
-            >
-              Add member
+          </label>
+
+          <div className="field fieldActions">
+            <button type="submit" disabled={working || !newProfileName.trim()}>
+              Створити профіль
+            </button>
+
+            <button type="button" onClick={refreshAll} disabled={working || loading}>
+              Оновити дані
             </button>
           </div>
+        </form>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {members.map((m) => (
-              <div
-                key={m.id}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 8,
-                  padding: 12,
-                }}
-              >
-                <div style={{ fontWeight: 600 }}>
-                  {m.name || m.email} {m.isCurrentUser ? "(you)" : ""}
-                </div>
-                <div>{m.email}</div>
-
-                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <select
-                    value={m.role}
-                    onChange={(e) => onChangeMemberRole(m.id, e.target.value)}
-                    disabled={working}
-                  >
-                    {ROLE_OPTIONS.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={() => onRemoveMember(m.id)}
-                    disabled={working}
-                    style={{ border: "1px solid #f4433633" }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {!members.length ? <div>No members yet.</div> : null}
+        {(error || success) && (
+          <div style={{ marginTop: 12 }}>
+            {error ? <div className="inlineError">{error}</div> : null}
+            {success ? <div style={{ color: "#7dffbf" }}>{success}</div> : null}
           </div>
-        </>
-      )}
+        )}
+      </section>
+
+      <section className="card">
+        <div className="sectionHeader">
+          <div>
+            <h2>Мої профілі</h2>
+            <p className="mutedText">
+              Власник може перейменувати або видалити профіль. Учасник може лише
+              перемикатись між доступними профілями.
+            </p>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="mutedText">Завантаження профілів…</div>
+        ) : !profiles.length ? (
+          <div className="emptyState">Профілі ще не створені.</div>
+        ) : (
+          <div className="listGrid">
+            {profiles.map((profile) => {
+              const isActive = profile.id === activeProfileId;
+              const canManage = profile.role === "owner";
+
+              return (
+                <article key={profile.id} className="budgetCard">
+                  <div className="budgetCardTop">
+                    <div>
+                      <h3>{profile.name}</h3>
+                      <div className="mutedText">{profile.id}</div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <span className="badge">{profile.role}</span>
+                      {isActive ? <span className="badge">активний</span> : null}
+                    </div>
+                  </div>
+
+                  <div className="formGrid twoCols">
+                    <label className="field">
+                      <span>Нова назва</span>
+                      <input
+                        value={renameDrafts[profile.id] ?? ""}
+                        onChange={(e) =>
+                          setRenameDrafts((prev) => ({
+                            ...prev,
+                            [profile.id]: e.target.value,
+                          }))
+                        }
+                        disabled={working || !canManage}
+                      />
+                    </label>
+
+                    <div className="field fieldActions">
+                      <button
+                        type="button"
+                        onClick={() => handleRenameProfile(profile.id)}
+                        disabled={working || !canManage || !String(renameDrafts[profile.id] || "").trim()}
+                      >
+                        Перейменувати
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectProfile(profile.id)}
+                        disabled={working || isActive}
+                      >
+                        Обрати
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProfile(profile.id)}
+                        disabled={working || !canManage}
+                      >
+                        Видалити
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="sectionHeader">
+          <div>
+            <h2>Учасники активного профілю</h2>
+            <p className="mutedText">
+              Owner може додавати користувачів, змінювати ролі та видаляти учасників.
+            </p>
+          </div>
+        </div>
+
+        {!activeProfile ? (
+          <div className="emptyState">Спочатку обери активний профіль.</div>
+        ) : (
+          <>
+            <form onSubmit={handleAddMember} className="formGrid twoCols" style={{ marginBottom: 18 }}>
+              <label className="field">
+                <span>Email користувача</span>
+                <input
+                  value={memberEmail}
+                  onChange={(e) => setMemberEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  disabled={working || !isOwner}
+                />
+              </label>
+
+              <label className="field">
+                <span>Роль</span>
+                <select
+                  value={memberRole}
+                  onChange={(e) => setMemberRole(e.target.value)}
+                  disabled={working || !isOwner}
+                >
+                  {ROLE_OPTIONS.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="field fieldActions">
+                <button
+                  type="submit"
+                  disabled={working || !isOwner || !memberEmail.trim()}
+                >
+                  Додати учасника
+                </button>
+              </div>
+            </form>
+
+            {!members.length ? (
+              <div className="emptyState">У цьому профілі ще немає учасників.</div>
+            ) : (
+              <div className="listGrid">
+                {members.map((member) => (
+                  <article key={member.id} className="budgetCard">
+                    <div className="budgetCardTop">
+                      <div>
+                        <h3>{member.name || member.email}</h3>
+                        <div className="mutedText">{member.email}</div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <span className="badge">{member.role}</span>
+                        {member.isCurrentUser ? <span className="badge">ви</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="formGrid twoCols">
+                      <label className="field">
+                        <span>Змінити роль</span>
+                        <select
+                          value={member.role}
+                          onChange={(e) => handleChangeMemberRole(member.id, e.target.value)}
+                          disabled={working || !isOwner}
+                        >
+                          {ROLE_OPTIONS.map((role) => (
+                            <option key={role} value={role}>
+                              {role}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="field fieldActions">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMember(member.id)}
+                          disabled={working || !isOwner}
+                        >
+                          Видалити з профілю
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
     </div>
   );
 }
